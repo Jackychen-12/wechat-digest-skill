@@ -1,0 +1,12 @@
+# 凭证（token + cookie）严禁提交
+credentials.json
+cookie.txt
+# 采集与分析产物：articles_*.json / index_*.xlsx / knowledge_base.json /
+# digest.html 等全部不提交（保留目录占位）。assets/ 模板是源码，照常跟踪。
+output/*
+!output/.gitkeep
+# Python 缓存
+__pycache__/
+*.pyc
+.DS_Store
+*.log

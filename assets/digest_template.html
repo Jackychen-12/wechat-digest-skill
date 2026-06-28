@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="referrer" content="no-referrer" />
+<title>墨摘 · 公众号知识库工作台</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%23d8401f'/><text x='50' y='72' font-size='62' text-anchor='middle' fill='%23f4efe4' font-family='serif'>摘</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@500;700;900&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --paper:#f4efe4; --paper-2:#efe8d8; --card:#fbf8f0; --ink:#1c1813; --ink-2:#4a4239; --ink-3:#7a6f5e;
+  --line:#d9cfb8; --line-2:#e7dfcc; --vermilion:#d8401f; --vermilion-d:#b8311a; --moss:#41684e; --gold:#a9762a;
+  --font-display:"Fraunces","Noto Serif SC",Georgia,serif;
+  --font-sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --r:5px; --r-lg:12px; --shadow:0 1px 0 var(--line),0 18px 40px -28px rgba(28,24,19,.5); --maxw:1180px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--font-sans);line-height:1.6;-webkit-font-smoothing:antialiased}
+.grain{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.5;background-image:radial-gradient(rgba(28,24,19,.025) 1px,transparent 1px);background-size:3px 3px}
+a{color:var(--vermilion);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font-family:var(--font-sans);cursor:pointer}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 1.4rem;position:relative;z-index:2}
+
+/* header */
+header{border-bottom:1px solid var(--line);background:linear-gradient(var(--paper),var(--paper-2));position:sticky;top:0;z-index:10}
+.head{display:flex;align-items:center;gap:1rem;padding:.8rem 0;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:.6rem}
+.seal{width:38px;height:38px;border-radius:9px;background:var(--vermilion);color:var(--paper);font-family:var(--font-display);font-size:1.5rem;display:grid;place-items:center;box-shadow:var(--shadow)}
+.brand h1{font-family:var(--font-display);font-weight:500;font-size:1.25rem;margin:0;line-height:1}
+.brand em{font-style:italic;color:var(--ink-3);font-weight:400}
+.brand .gen{font-family:var(--font-mono);font-size:.66rem;color:var(--ink-3);margin-top:.15rem}
+.tabs{display:flex;gap:.2rem;margin-left:auto;flex-wrap:wrap}
+.tab{border:1px solid transparent;background:none;padding:.45rem .85rem;border-radius:var(--r);font-size:.9rem;color:var(--ink-2)}
+.tab:hover{background:var(--card)}
+.tab.on{background:var(--card);border-color:var(--line);color:var(--ink);font-weight:500}
+.icon-btn{border:1px solid var(--line);background:var(--card);border-radius:var(--r);padding:.45rem .6rem;font-size:.95rem;color:var(--ink-2)}
+
+/* sections */
+main{padding:1.6rem 0 4rem}
+.view{display:none}
+.view.on{display:block}
+.section-title{font-family:var(--font-display);font-weight:500;font-size:1.5rem;margin:.2rem 0 1rem;display:flex;align-items:baseline;gap:.6rem}
+.section-title .sub{font-family:var(--font-mono);font-size:.74rem;color:var(--ink-3)}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.9rem;margin-bottom:1.6rem}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:1rem 1.1rem;box-shadow:var(--shadow)}
+.tile .k{font-family:var(--font-mono);font-size:.72rem;color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em}
+.tile .v{font-family:var(--font-display);font-size:2rem;line-height:1.1;margin-top:.25rem}
+.tile .v small{font-size:.9rem;color:var(--ink-3)}
+
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:1.2rem 1.3rem;box-shadow:var(--shadow);margin-bottom:1.3rem}
+.panel h3{font-family:var(--font-display);font-weight:500;font-size:1.12rem;margin:0 0 .8rem}
+.bar-row{display:grid;grid-template-columns:130px 1fr 44px;align-items:center;gap:.6rem;margin:.3rem 0;font-size:.86rem}
+.bar-row .name{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:9px;background:var(--line-2);border-radius:6px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--vermilion);border-radius:6px}
+.bar-row .num{font-family:var(--font-mono);font-size:.78rem;color:var(--ink-3);text-align:right}
+
+/* tags */
+.chip{display:inline-block;font-family:var(--font-mono);font-size:.72rem;padding:.12rem .5rem;border:1px solid var(--line);border-radius:99px;color:var(--ink-2);background:var(--paper);margin:.12rem .2rem .12rem 0;cursor:pointer}
+.chip:hover{border-color:var(--vermilion);color:var(--vermilion)}
+.chip.lg{font-size:.85rem;padding:.2rem .7rem}
+.tagcloud .chip{margin:.2rem}
+
+/* toolbar */
+.toolbar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem}
+.toolbar input[type=text],.toolbar select{font-family:var(--font-sans);font-size:.88rem;padding:.45rem .6rem;border:1px solid var(--line);border-radius:var(--r);background:var(--card);color:var(--ink);transition:border-color .15s,box-shadow .15s}
+.toolbar input[type=text]:focus{border-color:var(--ink);box-shadow:3px 3px 0 var(--ink)}
+.toolbar input[type=text]{min-width:200px;flex:1}
+.toolbar label{font-size:.82rem;color:var(--ink-2);display:flex;align-items:center;gap:.3rem}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:.45rem .8rem;border-radius:var(--r);font-size:.86rem;transition:transform .12s ease,background .15s,color .15s,border-color .15s}
+.btn:hover{border-color:var(--vermilion);color:var(--vermilion);transform:translateY(-1px)}
+.btn.primary{background:var(--vermilion);color:#fff;border-color:var(--vermilion)}
+.btn.primary:hover{background:var(--vermilion-d);transform:translateY(-1px)}
+.btn.sm{padding:.25rem .55rem;font-size:.78rem}
+
+/* article cards */
+.art{background:var(--card);border:1px solid var(--line);border-left:3px solid transparent;border-radius:var(--r-lg);padding:1rem 1.15rem;margin-bottom:.9rem;box-shadow:var(--shadow);transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s ease}
+.art:hover{transform:translateY(-2px);box-shadow:0 2px 4px var(--line),0 20px 44px -24px rgba(28,24,19,.35)}
+.art.starred{border-left-color:var(--gold);background:linear-gradient(135deg,var(--card) 0%,rgba(169,118,42,.04) 100%)}
+.art .star-btn{transition:all .15s ease}
+.art .star-btn.on{color:var(--gold);font-weight:700}
+.art-meta{font-family:var(--font-mono);font-size:.72rem;color:var(--ink-3);display:flex;gap:.7rem;flex-wrap:wrap;align-items:center}
+.badge{font-family:var(--font-mono);font-size:.64rem;padding:.05rem .4rem;border-radius:99px;border:1px solid currentColor}
+.badge.ok{color:var(--moss)} .badge.no{color:var(--gold)}
+.art h3{font-family:var(--font-display);font-weight:500;font-size:1.12rem;margin:.35rem 0 .3rem;line-height:1.3}
+.art .digest{font-size:.9rem;color:var(--ink-2);margin:.2rem 0 .5rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.art-foot{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin-top:.5rem}
+.art-foot .spacer{flex:1}
+.analysis{border-top:1px dashed var(--line);margin-top:.8rem;padding-top:.8rem;display:none}
+.analysis.on{display:block}
+.analysis h4{font-family:var(--font-display);font-weight:600;font-size:.95rem;color:var(--vermilion-d);margin:.9rem 0 .3rem}
+.analysis h4:first-child{margin-top:0}
+.analysis ul{margin:.2rem 0;padding-left:1.2rem}
+.analysis li{font-size:.9rem;margin:.15rem 0}
+.analysis p{font-size:.9rem;margin:.2rem 0}
+.raw{border-top:1px dashed var(--line);margin-top:.8rem;padding-top:.8rem;display:none}
+.raw.on{display:block}
+.raw-meta{font-family:var(--font-mono);font-size:.73rem;color:var(--ink-3);margin-bottom:.5rem;display:flex;gap:.7rem;flex-wrap:wrap}
+.raw-text{font-size:.92rem;color:var(--ink);line-height:1.85;max-height:440px;overflow:auto;background:var(--paper);border:1px solid var(--line-2);border-radius:var(--r);padding:.8rem 1rem}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:.6rem;margin-top:.4rem}
+.gimg{margin:0}
+.gimg img{width:100%;height:104px;object-fit:cover;border-radius:var(--r);border:1px solid var(--line);background:var(--line-2)}
+.gimg img.broken{display:none}
+.gimg figcaption{font-family:var(--font-mono);font-size:.68rem;text-align:center;margin-top:.2rem}
+.muted{color:var(--ink-3);font-size:.86rem}
+.empty{text-align:center;color:var(--ink-3);padding:3rem 1rem;font-style:italic}
+
+/* collections */
+.coll-grid{display:grid;grid-template-columns:260px 1fr;gap:1.2rem}
+.coll-list .coll-item{display:flex;justify-content:space-between;align-items:center;padding:.55rem .7rem;border:1px solid var(--line);border-radius:var(--r);background:var(--card);margin-bottom:.5rem;cursor:pointer}
+.coll-list .coll-item.on{border-color:var(--vermilion);background:#fff}
+.coll-list .coll-item .cnt{font-family:var(--font-mono);font-size:.72rem;color:var(--ink-3)}
+.read-item{display:grid;grid-template-columns:26px 1fr auto;gap:.6rem;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--line-2);font-size:.9rem}
+.read-item .ord{font-family:var(--font-mono);color:var(--gold);font-size:.8rem}
+.modal{position:fixed;inset:0;background:rgba(28,24,19,.45);display:none;place-items:center;z-index:50}
+.modal.on{display:grid}
+.modal .box{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:1.4rem;max-width:440px;width:92%;box-shadow:0 30px 60px -20px rgba(0,0,0,.5)}
+.modal h3{font-family:var(--font-display);font-weight:500;margin:0 0 1rem}
+.field{margin-bottom:.8rem}
+.field label{display:block;font-size:.8rem;color:var(--ink-2);margin-bottom:.25rem}
+.field input,.field select{width:100%;padding:.5rem .6rem;border:1px solid var(--line);border-radius:var(--r);font-family:var(--font-sans);background:var(--paper)}
+.field .hint{font-size:.72rem;color:var(--ink-3);margin-top:.25rem}
+.row-end{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem}
+
+/* toast */
+#toast{position:fixed;bottom:1.4rem;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--paper);padding:.6rem 1.1rem;border-radius:var(--r);font-size:.86rem;opacity:0;transition:.25s;z-index:100;pointer-events:none;box-shadow:0 18px 40px -16px rgba(28,24,19,.6)}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{background:var(--vermilion-d)}
+.typing{display:inline-block;width:7px;height:1em;background:var(--vermilion);vertical-align:text-bottom;animation:blink 1s steps(2) infinite}
+@keyframes blink{0%,50%{opacity:1}50.1%,100%{opacity:0}}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.sec-no{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.16em;color:var(--vermilion);text-transform:uppercase}
+.art{animation:rise .35s both}
+@media(max-width:720px){.coll-grid{grid-template-columns:1fr}.bar-row{grid-template-columns:96px 1fr 40px}}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header><div class="wrap head">
+  <div class="brand">
+    <span class="seal">摘</span>
+    <div>
+      <h1>墨摘 <em>知识库工作台</em></h1>
+      <div class="gen">离线 · 生成于 __GENERATED_AT__ <span id="save-mode"></span></div>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab on" data-view="overview">总览</button>
+    <button class="tab" data-view="library">文章库</button>
+    <button class="tab" data-view="kb">知识库</button>
+    <button class="tab" data-view="collections">收藏夹</button>
+  </nav>
+  <button class="icon-btn" id="open-settings" title="AI 接口设置">⚙︎</button>
+</div></header>
+
+<main class="wrap">
+  <section class="view on" id="view-overview"></section>
+  <section class="view" id="view-library"></section>
+  <section class="view" id="view-kb"></section>
+  <section class="view" id="view-collections"></section>
+</main>
+
+<!-- settings modal -->
+<div class="modal" id="settings-modal"><div class="box">
+  <h3>AI 接口设置（预留）</h3>
+  <p class="muted" style="margin-top:-.4rem">不填也能用：页面默认只读 agent 预生成的拆解。填了才会启用「用 AI 即时拆解」，按现有 <code>/api/chat</code> 协议调用。Key 仅存本机浏览器，绝不写入文件或知识库。</p>
+  <div class="field"><label>后端 URL（Deno/兼容后端）</label><input id="set-base" placeholder="https://你的后端.deno.dev" /></div>
+  <div class="field"><label>Provider</label>
+    <select id="set-provider"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="dashscope">通义千问</option></select>
+  </div>
+  <div class="field"><label>Model</label><input id="set-model" placeholder="gpt-4o-mini / deepseek-chat / qwen-plus" /></div>
+  <div class="field"><label>API Key（仅本机 localStorage）</label><input id="set-key" type="password" placeholder="sk-..." />
+    <div class="hint">清空并保存即可移除本机 Key。</div></div>
+  <div class="row-end"><button class="btn" id="set-cancel">取消</button><button class="btn primary" id="set-save">保存</button></div>
+</div></div>
+
+<div id="toast"></div>
+
+<script id="kb-data" type="application/json">__KB_DATA__</script>
+<script>
+"use strict";
+/* ─────────── data ─────────── */
+const DATA = (()=>{ try{ return JSON.parse(document.getElementById("kb-data").textContent); }catch(e){ return {articles:{},topics:[],tags:{},collections:{}}; } })();
+const ARTS = Object.values(DATA.articles||{});
+const ARTBYID = DATA.articles||{};
+const TOPICS = DATA.topics||[];
+const TAGS = DATA.tags||{};
+const TOPIC_NAME = Object.fromEntries(TOPICS.map(t=>[t.id,t.name]));
+
+/* ─────────── localStorage state ─────────── */
+const LS = {
+  get(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v);}catch{ return d; } },
+  set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
+};
+const K_COLL="mozhai.collections", K_AI="mozhai.ai", K_AICACHE="mozhai.ai.analysis", K_CUR="mozhai.curColl";
+// 由 kb.py serve（http://127.0.0.1）打开时 SERVER=true → 收藏夹自动存回 knowledge_base.json
+const SERVER = /^https?:$/.test(location.protocol);
+let collections = {};
+let aiCfg = LS.get(K_AI,{base:"",provider:"openai",model:"",key:""});
+let aiCache = LS.get(K_AICACHE,{});   // {id: markdown}
+let curColl = LS.get(K_CUR,"");
+function seedCollections(){
+  let c = LS.get(K_COLL,null);
+  if(c===null){ c={}; for(const [name,x] of Object.entries(DATA.collections||{})) c[name]={name,articleIds:(x.articleIds||[]).slice()}; }
+  return c;
+}
+async function bootCollections(){
+  if(SERVER){ try{ const r=await fetch("/api/kb-collections"); if(r.ok){ collections=(await r.json()).collections||{}; LS.set(K_COLL,collections); return; } }catch(e){} }
+  collections = seedCollections(); LS.set(K_COLL,collections);
+}
+function updateSaveMode(){ const s=document.getElementById("save-mode"); if(!s)return;
+  s.textContent = SERVER ? "· 收藏夹自动存盘 ✓" : "· 收藏夹存本浏览器（清缓存会丢，建议用 kb.py serve 打开）";
+  s.style.color = SERVER ? "var(--moss)" : "var(--gold)"; }
+let _saveT;
+function saveColls(){
+  LS.set(K_COLL,collections);
+  if(SERVER){ clearTimeout(_saveT); _saveT=setTimeout(serverSave,600); }
+}
+async function serverSave(){
+  try{ const r=await fetch("/api/save-collections",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collections})});
+    const s=document.getElementById("save-mode"); if(s&&r.ok){ s.textContent="· 已保存到本地知识库 ✓"; s.style.color="var(--moss)"; } }catch(e){}
+}
+
+/* ─────────── helpers ─────────── */
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $=s=>document.querySelector(s);
+let toastT;
+function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),1900); }
+function download(name,text){ const b=new Blob([text],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement("a"); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1000); }
+function fmtMd(md){
+  const lines=String(md||"").split("\n"); let out="",inList=false;
+  const inline=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`(.+?)`/g,"<code>$1</code>");
+  for(let ln of lines){ ln=ln.replace(/\s+$/,"");
+    if(/^#{1,4}\s+/.test(ln)){ if(inList){out+="</ul>";inList=false;} out+="<h4>"+inline(ln.replace(/^#{1,4}\s+/,""))+"</h4>"; }
+    else if(/^[-*]\s+/.test(ln)){ if(!inList){out+="<ul>";inList=true;} out+="<li>"+inline(ln.replace(/^[-*]\s+/,""))+"</li>"; }
+    else if(ln.trim()===""){ if(inList){out+="</ul>";inList=false;} }
+    else { if(inList){out+="</ul>";inList=false;} out+="<p>"+inline(ln)+"</p>"; }
+  }
+  if(inList)out+="</ul>"; return out;
+}
+const hasAnalysis=a=>a.analysis&&(a.analysis.summary||(a.analysis.viewpoints||[]).length||(a.analysis.data||[]).length||(a.analysis.tags||[]).length||a.analysis.audience);
+
+/* ─────────── tabs ─────────── */
+$("#tabs").addEventListener("click",e=>{ const b=e.target.closest(".tab"); if(!b)return;
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t===b));
+  const v=b.dataset.view;
+  document.querySelectorAll(".view").forEach(s=>s.classList.toggle("on",s.id==="view-"+v));
+  ({overview:renderOverview,library:renderLibrary,kb:renderKB,collections:renderCollections}[v])();
+});
+
+/* ─────────── overview ─────────── */
+function renderOverview(){
+  const n=ARTS.length, analyzed=ARTS.filter(a=>a.analyzedAt).length;
+  const accs={}; let chars=0; const dates=[];
+  ARTS.forEach(a=>{ accs[a.account||"(未知)"]=(accs[a.account||"(未知)"]||0)+1; chars+=(a.content||"").length; if(a.publishDate)dates.push(a.publishDate); });
+  dates.sort();
+  const accArr=Object.entries(accs).sort((a,b)=>b[1]-a[1]);
+  const tagArr=Object.entries(TAGS).slice(0,24);
+  const maxAcc=Math.max(1,...accArr.map(x=>x[1]));
+  const tile=(k,v,s)=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}${s?` <small>${s}</small>`:""}</div></div>`;
+  $("#view-overview").innerHTML=`
+    <h2 class="section-title"><span class="sec-no">No.01</span> 总览 <span class="sub">knowledge base overview</span></h2>
+    <div class="tiles">
+      ${tile("文章总数",n)}
+      ${tile("已拆解",analyzed,`/ ${n}`)}
+      ${tile("公众号",accArr.length)}
+      ${tile("主题",TOPICS.length)}
+      ${tile("标签",Object.keys(TAGS).length)}
+      ${tile("正文总字",chars>9999?(chars/10000).toFixed(1)+"万":chars)}
+    </div>
+    <div class="panel"><h3>时间范围</h3><p class="muted">${dates[0]||"—"} &nbsp;~&nbsp; ${dates[dates.length-1]||"—"}　·　已拆解占比 ${n?Math.round(analyzed/n*100):0}%</p></div>
+    <div class="panel"><h3>公众号分布</h3>${accArr.length?accArr.slice(0,14).map(([k,v])=>`
+      <div class="bar-row"><span class="name">${esc(k)}</span><span class="bar"><i style="width:${v/maxAcc*100}%"></i></span><span class="num">${v}</span></div>`).join(""):'<p class="muted">暂无数据</p>'}</div>
+    ${TOPICS.length?`<div class="panel"><h3>主题分布</h3>${TOPICS.map(t=>`<div class="bar-row"><span class="name">${esc(t.name)}</span><span class="bar"><i style="width:${(t.articleIds||[]).length/Math.max(1,n)*100}%"></i></span><span class="num">${(t.articleIds||[]).length}</span></div>`).join("")}</div>`:""}
+    <div class="panel"><h3>高频标签</h3><div class="tagcloud">${tagArr.length?tagArr.map(([t,ids])=>`<span class="chip lg" data-tag="${esc(t)}">${esc(t)} <small>${ids.length}</small></span>`).join(""):'<span class="muted">尚未拆解出标签。用 <code>kb.py list --unanalyzed</code> 取批次让 agent 拆解。</span>'}</div></div>`;
+  $("#view-overview").querySelectorAll("[data-tag]").forEach(c=>c.onclick=()=>gotoLibraryWithTag(c.dataset.tag));
+}
+
+/* ─────────── library ─────────── */
+let filt={q:"",account:"",topic:"",tag:"",analyzed:false};
+function gotoLibraryWithTag(tag){ filt.tag=tag; document.querySelector('.tab[data-view="library"]').click(); }
+function renderLibrary(){
+  const accs=[...new Set(ARTS.map(a=>a.account).filter(Boolean))].sort();
+  const opt=(arr,sel,labelFn)=>arr.map(v=>`<option value="${esc(typeof v==='object'?v.id:v)}" ${ (typeof v==='object'?v.id:v)===sel?"selected":""}>${esc(labelFn?labelFn(v):v)}</option>`).join("");
+  const collOpts=Object.keys(collections).map(n=>`<option value="${esc(n)}" ${n===curColl?"selected":""}>${esc(n)} (${collections[n].articleIds.length})</option>`).join("");
+  $("#view-library").innerHTML=`
+    <h2 class="section-title"><span class="sec-no">No.02</span> 文章库 <span class="sub">click 查看拆解 · ⭐ 加入收藏夹</span></h2>
+    <div class="toolbar">
+      <input type="text" id="f-q" placeholder="搜索标题/正文/公众号…" value="${esc(filt.q)}" />
+      <select id="f-account"><option value="">全部公众号</option>${opt(accs,filt.account)}</select>
+      <select id="f-topic"><option value="">全部主题</option>${opt(TOPICS,filt.topic,t=>t.name)}</select>
+      <select id="f-tag"><option value="">全部标签</option>${opt(Object.keys(TAGS),filt.tag)}</select>
+      <label><input type="checkbox" id="f-an" ${filt.analyzed?"checked":""}/> 仅已拆解</label>
+    </div>
+    <div class="toolbar" style="margin-top:-.4rem">
+      <span class="muted">当前收藏夹：</span>
+      <select id="cur-coll"><option value="">（未选择）</option>${collOpts}</select>
+      <button class="btn sm" id="new-coll">＋ 新建收藏夹</button>
+    </div>
+    <div id="lib-list"></div>`;
+  const bind=(id,ev,fn)=>{const el=$("#"+id); if(el)el.addEventListener(ev,fn);};
+  bind("f-q","input",e=>{filt.q=e.target.value;renderList();});
+  bind("f-account","change",e=>{filt.account=e.target.value;renderList();});
+  bind("f-topic","change",e=>{filt.topic=e.target.value;renderList();});
+  bind("f-tag","change",e=>{filt.tag=e.target.value;renderList();});
+  bind("f-an","change",e=>{filt.analyzed=e.target.checked;renderList();});
+  bind("cur-coll","change",e=>{curColl=e.target.value;LS.set(K_CUR,curColl);});
+  bind("new-coll","click",()=>{ const n=prompt("新建收藏夹名称："); if(!n)return; if(!collections[n])collections[n]={name:n,articleIds:[]}; curColl=n; saveColls(); LS.set(K_CUR,curColl); renderLibrary(); toast("已创建：" +n); });
+  renderList();
+}
+function filtered(){
+  const q=filt.q.trim().toLowerCase();
+  return ARTS.filter(a=>{
+    if(filt.account&&a.account!==filt.account)return false;
+    if(filt.topic&&!(a.topicIds||[]).includes(filt.topic))return false;
+    if(filt.tag&&!((a.analysis&&a.analysis.tags)||[]).includes(filt.tag))return false;
+    if(filt.analyzed&&!a.analyzedAt)return false;
+    if(q&&!((a.title||"").toLowerCase().includes(q)||(a.content||"").toLowerCase().includes(q)||(a.digest||"").toLowerCase().includes(q)||(a.account||"").toLowerCase().includes(q)))return false;
+    return true;
+  }).sort((a,b)=>(b.publishDate||"").localeCompare(a.publishDate||""));
+}
+function analysisHtml(a){
+  const an=a.analysis||{};
+  if(hasAnalysis(a)){
+    const list=arr=>(arr||[]).length?"<ul>"+arr.map(x=>"<li>"+esc(x)+"</li>").join("")+"</ul>":'<p class="muted">—</p>';
+    return `
+      <h4>一句话总结</h4><p>${esc(an.summary)||'<span class="muted">—</span>'}</p>
+      <h4>核心观点</h4>${list(an.viewpoints)}
+      <h4>关键数据 / 事实</h4>${list(an.data)}
+      <h4>关键词标签</h4><div>${(an.tags||[]).map(t=>`<span class="chip">${esc(t)}</span>`).join("")||'<span class="muted">—</span>'}</div>
+      <h4>价值与适用人群</h4><p>${esc(an.audience)||'<span class="muted">—</span>'}</p>
+      ${(a.crossRefs||[]).length?`<h4>关联文章</h4><ul>${a.crossRefs.map(id=>`<li>${ARTBYID[id]?esc(ARTBYID[id].title):esc(id)}</li>`).join("")}</ul>`:""}`;
+  }
+  if(aiCache[a.id]) return `<p class="muted" style="margin-top:0">AI 即时拆解：</p>`+fmtMd(aiCache[a.id]);
+  let h=`<p class="muted">尚未拆解。取批次让本地 agent 拆解：<code>python3 kb.py list --unanalyzed --content --json</code> → <code>kb.py apply</code> 写回。</p>`;
+  if(aiConfigured()) h+=`<button class="btn sm" data-act="ai" data-id="${esc(a.id)}">⚡ 用 AI 即时拆解</button>`;
+  return h;
+}
+function rawHtml(a){
+  const imgs=a.images||[];
+  const text=a.content?`<div class="raw-text">${esc(a.content).replace(/\n/g,"<br>")}</div>`:'<p class="muted">（正文未取到——可能是图文/视频类推送或被风控。可点上方链接看原文。）</p>';
+  const gallery=imgs.length?`<div class="gallery">${imgs.map((u,i)=>`<figure class="gimg"><img loading="lazy" referrerpolicy="no-referrer" src="${esc(u)}" alt="配图${i+1}" onerror="this.classList.add('broken')"><figcaption><a href="${esc(u)}" target="_blank" rel="noopener">图${i+1} ↗</a></figcaption></figure>`).join("")}</div>`:"";
+  return `<div class="raw-meta">${a.link?`<a href="${esc(a.link)}" target="_blank" rel="noopener">↗ 打开公众号原文</a>`:""}<span>${(a.content||"").length} 字</span><span>${imgs.length} 图</span>${a.cover?`<a href="${esc(a.cover)}" target="_blank" rel="noopener">封面 ↗</a>`:""}</div>${text}${imgs.length?`<h4 style="font-family:var(--font-display);color:var(--vermilion-d);margin:.9rem 0 .3rem">正文配图（${imgs.length}）</h4>${gallery}`:""}`;
+}
+function renderList(){
+  const arts=filtered();
+  const host=$("#lib-list");
+  if(!arts.length){ host.innerHTML='<div class="empty">没有匹配的文章。</div>'; return; }
+  const collIds=curColl&&collections[curColl]?collections[curColl].articleIds:[];
+  host.innerHTML=arts.map(a=>{
+    const inColl=collIds.includes(a.id);
+    return `
+    <article class="art${inColl?" starred":""}" data-id="${esc(a.id)}">
+      <div class="art-meta">
+        <span>${esc(a.account)||"(未知公众号)"}</span><span>${esc(a.publishDate)||"----"}</span>
+        <span>${(a.content||"").length} 字</span>${(a.images||[]).length?`<span>${a.images.length} 图</span>`:""}
+        <span class="badge ${a.analyzedAt?"ok":"no"}">${a.analyzedAt?"已拆解":(aiCache[a.id]?"AI拆解":"未拆解")}</span>
+        ${(a.topicIds||[]).map(t=>`<span>#${esc(TOPIC_NAME[t]||t)}</span>`).join("")}
+      </div>
+      <h3>${a.link?`<a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>`:esc(a.title)}</h3>
+      ${a.digest?`<p class="digest">${esc(a.digest)}</p>`:""}
+      <div class="art-foot">
+        <button class="btn sm" data-act="raw">查看原文${(a.images||[]).length?` · ${a.images.length}图`:""}</button>
+        <button class="btn sm" data-act="expand">查看拆解</button>
+        <button class="btn sm star-btn${inColl?" on":""}" data-act="star">${inColl?"★ 已收藏":"☆ 收藏"}</button>
+        <span class="spacer"></span>
+        ${(a.analysis&&a.analysis.tags||[]).slice(0,4).map(t=>`<span class="chip">${esc(t)}</span>`).join("")}
+      </div>
+      <div class="analysis">${analysisHtml(a)}</div>
+      <div class="raw"></div>
+    </article>`}).join("");
+}
+$("#view-library").addEventListener("click",async e=>{
+  const btn=e.target.closest("[data-act]"); if(!btn)return;
+  const art=btn.closest(".art"); const id=art&&art.dataset.id; const a=ARTBYID[id];
+  const act=btn.dataset.act;
+  if(act==="expand"){ const p=art.querySelector(".analysis"); p.classList.toggle("on"); btn.textContent=p.classList.contains("on")?"收起":"查看拆解"; }
+  else if(act==="raw"){ const p=art.querySelector(".raw"); if(!p.dataset.filled){ p.innerHTML=rawHtml(a); p.dataset.filled="1"; } p.classList.toggle("on"); btn.textContent=p.classList.contains("on")?"收起原文":("查看原文"+((a.images||[]).length?` · ${a.images.length}图`:"")); }
+  else if(act==="star"){ addToCollection(id); }
+  else if(act==="ai"){ runAiArticle(a,art.querySelector(".analysis")); }
+});
+function addToCollection(id){
+  if(!curColl){ toast("请先在上方「当前收藏夹」选择或新建一个收藏夹"); return; }
+  const c=collections[curColl]; if(!c)return;
+  const i=c.articleIds.indexOf(id);
+  if(i>=0){ c.articleIds.splice(i,1); toast("已从《"+curColl+"》移除"); }
+  else { c.articleIds.push(id); toast("已加入《"+curColl+"》"); }
+  saveColls();
+  // update visual state for this card
+  const card=document.querySelector(`.art[data-id="${id}"]`);
+  if(card){
+    const inColl=c.articleIds.includes(id);
+    card.classList.toggle("starred",inColl);
+    const starBtn=card.querySelector(".star-btn");
+    if(starBtn){ starBtn.classList.toggle("on",inColl); starBtn.textContent=inColl?"★ 已收藏":"☆ 收藏"; }
+  }
+}
+
+/* ─────────── knowledge base ─────────── */
+function renderKB(){
+  // timeline by month
+  const byMonth={}; ARTS.forEach(a=>{ const m=(a.publishDate||"").slice(0,7); if(m)byMonth[m]=(byMonth[m]||0)+1; });
+  const months=Object.keys(byMonth).sort(); const maxM=Math.max(1,...Object.values(byMonth));
+  const tagArr=Object.entries(TAGS); const maxTag=Math.max(1,...tagArr.map(x=>x[1].length));
+  const crossArts=ARTS.filter(a=>(a.crossRefs||[]).length);
+  $("#view-kb").innerHTML=`
+    <h2 class="section-title"><span class="sec-no">No.03</span> 知识库 <span class="sub">topics · tags · timeline · cross-refs</span></h2>
+    <div class="panel"><h3>主题聚类</h3>${TOPICS.length?TOPICS.map(t=>`
+      <div style="margin-bottom:1rem">
+        <div style="font-family:var(--font-display);font-size:1.05rem">${esc(t.name)} <span class="muted">(${(t.articleIds||[]).length})</span></div>
+        ${(t.keywords||[]).length?`<div>${t.keywords.map(k=>`<span class="chip">${esc(k)}</span>`).join("")}</div>`:""}
+        <ul style="margin:.4rem 0 0">${(t.articleIds||[]).map(id=>ARTBYID[id]?`<li style="font-size:.88rem">${esc(ARTBYID[id].title)}</li>`:"").join("")}</ul>
+      </div>`).join(""):'<p class="muted">尚无主题。让 agent 用 <code>kb.py topic-upsert</code> + <code>kb.py set-meta --topics</code> 归类。</p>'}</div>
+    <div class="panel"><h3>标签云</h3><div class="tagcloud">${tagArr.length?tagArr.map(([t,ids])=>`<span class="chip" style="font-size:${(0.7+ids.length/maxTag*0.5).toFixed(2)}rem" data-tag="${esc(t)}">${esc(t)} <small>${ids.length}</small></span>`).join(""):'<span class="muted">尚无标签。</span>'}</div></div>
+    <div class="panel"><h3>发布时间线</h3>${months.length?months.map(m=>`<div class="bar-row"><span class="name">${m}</span><span class="bar"><i style="width:${byMonth[m]/maxM*100}%"></i></span><span class="num">${byMonth[m]}</span></div>`).join(""):'<p class="muted">暂无日期数据</p>'}</div>
+    <div class="panel"><h3>交叉引用</h3>${crossArts.length?crossArts.map(a=>`<div style="margin:.5rem 0;font-size:.9rem"><b>${esc(a.title)}</b><ul style="margin:.2rem 0">${a.crossRefs.map(id=>`<li>${ARTBYID[id]?esc(ARTBYID[id].title):esc(id)}</li>`).join("")}</ul></div>`).join(""):'<p class="muted">尚无交叉引用。让 agent 在拆解时用 <code>kb.py set-meta --crossrefs</code> 建立关联。</p>'}</div>`;
+  $("#view-kb").querySelectorAll("[data-tag]").forEach(c=>c.onclick=()=>gotoLibraryWithTag(c.dataset.tag));
+}
+
+/* ─────────── collections ─────────── */
+let selColl="";
+function renderCollections(){
+  const names=Object.keys(collections);
+  if(!selColl||!collections[selColl]) selColl=names[0]||"";
+  $("#view-collections").innerHTML=`
+    <h2 class="section-title"><span class="sec-no">No.04</span> 收藏夹 <span class="sub">build → 拆解 → 导出</span></h2>
+    <div class="toolbar"><button class="btn sm" id="c-new">＋ 新建</button><button class="btn sm" id="c-export">⬇ 导出收藏夹 JSON</button>
+      <span class="muted">导出后用 <code>python3 kb.py import-collections &lt;文件&gt;</code> 让 agent 做深度拆解。</span></div>
+    <div class="coll-grid">
+      <div class="coll-list">${names.length?names.map(n=>`<div class="coll-item ${n===selColl?"on":""}" data-coll="${esc(n)}"><span>${esc(n)}</span><span class="cnt">${collections[n].articleIds.length} ✕</span></div>`).join(""):'<p class="muted">还没有收藏夹。去「文章库」⭐ 收藏文章，或点上方「新建」。</p>'}</div>
+      <div id="coll-detail"></div>
+    </div>`;
+  $("#c-new").onclick=()=>{ const n=prompt("新建收藏夹名称："); if(!n)return; if(!collections[n])collections[n]={name:n,articleIds:[]}; selColl=n; saveColls(); renderCollections(); };
+  $("#c-export").onclick=()=>{ download("collections.json",JSON.stringify({collections},null,2)); toast("已导出 collections.json"); };
+  $("#view-collections").querySelectorAll(".coll-item").forEach(el=>{
+    el.querySelector(".cnt").onclick=ev=>{ ev.stopPropagation(); if(confirm("删除收藏夹《"+el.dataset.coll+"》？")){ delete collections[el.dataset.coll]; selColl=""; saveColls(); renderCollections(); } };
+    el.onclick=()=>{ selColl=el.dataset.coll; renderCollections(); };
+  });
+  renderCollDetail();
+}
+function renderCollDetail(){
+  const host=$("#coll-detail"); if(!selColl||!collections[selColl]){ host.innerHTML='<div class="empty">选择左侧一个收藏夹查看拆解。</div>'; return; }
+  const c=collections[selColl];
+  const arts=c.articleIds.map(id=>ARTBYID[id]).filter(Boolean).sort((a,b)=>(a.publishDate||"").localeCompare(b.publishDate||""));
+  // client-side aggregation
+  const tagCnt={}; let chars=0; const dates=[];
+  arts.forEach(a=>{ ((a.analysis&&a.analysis.tags)||[]).forEach(t=>tagCnt[t]=(tagCnt[t]||0)+1); chars+=(a.content||"").length; if(a.publishDate)dates.push(a.publishDate); });
+  dates.sort();
+  const topTags=Object.entries(tagCnt).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  const kbColl=(DATA.collections||{})[selColl];
+  const bd=kbColl&&kbColl.breakdown;
+  host.innerHTML=`
+    <div class="panel"><h3>${esc(selColl)} <span class="muted">· ${arts.length} 篇</span></h3>
+      <p class="muted">共 ${chars} 字　·　${dates[0]||"—"} ~ ${dates[dates.length-1]||"—"}</p>
+      <div>${topTags.map(([t,n])=>`<span class="chip">${esc(t)} <small>${n}</small></span>`).join("")||'<span class="muted">成员尚无标签</span>'}</div>
+      ${aiConfigured()?`<div style="margin-top:.7rem"><button class="btn sm" id="c-ai">⚡ 用 AI 拆解此收藏夹</button></div>`:""}
+    </div>
+    ${bd?`<div class="panel"><h3>收藏夹拆解（agent）</h3>${renderBreakdown(bd)}</div>`:`<div class="panel"><h3>收藏夹拆解</h3><p class="muted">尚无深度拆解。导出本收藏夹 → <code>kb.py import-collections</code> → 让 agent 写回 breakdown；或在上方用 AI 即时拆解。</p></div>`}
+    <div class="panel"><h3>建议阅读顺序（按时间）</h3>${arts.length?arts.map((a,i)=>`<div class="read-item"><span class="ord">${String(i+1).padStart(2,"0")}</span><span>${a.link?`<a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.title)}</a>`:esc(a.title)}<br><span class="muted" style="font-size:.78rem">${esc(a.account)} · ${esc(a.publishDate)||"--"}</span></span><button class="btn sm" data-rm="${esc(a.id)}">移除</button></div>`).join(""):'<p class="muted">收藏夹为空。</p>'}</div>
+    <div id="c-ai-out"></div>`;
+  host.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{ const i=c.articleIds.indexOf(b.dataset.rm); if(i>=0)c.articleIds.splice(i,1); saveColls(); renderCollections(); });
+  const aiBtn=$("#c-ai"); if(aiBtn)aiBtn.onclick=()=>runAiCollection(selColl,arts);
+}
+function renderBreakdown(bd){
+  if(typeof bd==="string")return fmtMd(bd);
+  // structured breakdown object → render known fields then fallback
+  let h="";
+  const sect=(t,v)=>{ if(!v)return; h+=`<h4 style="font-family:var(--font-display);color:var(--vermilion-d);margin:.8rem 0 .3rem">${esc(t)}</h4>`;
+    if(Array.isArray(v))h+="<ul>"+v.map(x=>"<li>"+esc(x)+"</li>").join("")+"</ul>"; else h+="<p>"+esc(v)+"</p>"; };
+  sect("共性主题",bd.themes||bd.commonThemes); sect("方法论 / 框架",bd.methods||bd.methodology);
+  sect("关键数据汇总",bd.keyData||bd.data); sect("跨篇洞察",bd.insights); sect("阅读顺序建议",bd.readingOrder);
+  if(!h&&bd.markdown)h=fmtMd(bd.markdown);
+  return h||'<p class="muted">（breakdown 为空）</p>';
+}
+
+/* ─────────── AI (reserved /api/chat interface) ─────────── */
+function aiConfigured(){ return !!((aiCfg.base||"").trim() && (aiCfg.key||"").trim()); }
+function apiUrl(p){ return (aiCfg.base||"").replace(/\/+$/,"")+p; }
+const SYS_PROMPT="你是一名资深的中文内容分析师，擅长从公众号文章中快速提炼结构化要点。输出必须为简洁、信息密度高的 Markdown。";
+async function aiChat(userMsg,onDelta){
+  const res=await fetch(apiUrl("/api/chat"),{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({provider:aiCfg.provider,model:aiCfg.model,key:aiCfg.key,messages:[{role:"system",content:SYS_PROMPT},{role:"user",content:userMsg}]})});
+  if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.error||("HTTP "+res.status)); }
+  const reader=res.body.getReader(); const dec=new TextDecoder(); let buf="",result="";
+  while(true){ const {done,value}=await reader.read(); if(done)break; buf+=dec.decode(value,{stream:true});
+    const lines=buf.split("\n"); buf=lines.pop();
+    for(const line of lines){ const t=line.trim(); if(!t.startsWith("data:"))continue; const d=t.slice(5).trim(); if(d==="[DONE]")continue;
+      try{ const delta=JSON.parse(d).choices?.[0]?.delta?.content; if(delta){ result+=delta; onDelta&&onDelta(result); } }catch{} } }
+  if(!result.trim())throw new Error("模型未返回内容");
+  return result;
+}
+async function runAiArticle(a,panel){
+  panel.classList.add("on"); panel.innerHTML='<p class="muted">AI 拆解中…</p><div id="ai-stream"></div>';
+  const out=panel.querySelector("#ai-stream");
+  const msg=`请对下面这篇公众号文章做结构化精析，用 Markdown 输出五个小标题（## 一句话总结 / ## 核心观点 / ## 关键数据 / 事实 / ## 关键词标签 / ## 价值与适用人群）。\n\n标题：${a.title}\n公众号：${a.account}\n正文：\n${(a.content||a.digest||"").slice(0,6000)}`;
+  try{ const r=await aiChat(msg,t=>out.innerHTML=fmtMd(t)+'<span class="typing"></span>'); out.innerHTML=fmtMd(r); aiCache[a.id]=r; LS.set(K_AICACHE,aiCache); toast("AI 拆解完成（已缓存到本机）"); }
+  catch(e){ out.innerHTML=`<p class="muted">AI 调用失败：${esc(e.message)}</p>`; }
+}
+async function runAiCollection(name,arts){
+  const host=$("#c-ai-out"); host.innerHTML='<div class="panel"><h3>AI 收藏夹拆解</h3><div id="cai">分析中…</div></div>';
+  const out=host.querySelector("#cai");
+  const list=arts.map((a,i)=>`${i+1}. 《${a.title}》(${a.account}) — ${(a.digest||a.content||"").slice(0,160)}`).join("\n");
+  const msg=`下面是收藏夹「${name}」里的 ${arts.length} 篇公众号文章。请做跨篇拆解，用 Markdown 输出：## 共性主题 / ## 方法论与框架 / ## 关键数据汇总 / ## 跨篇洞察 / ## 阅读顺序建议。\n\n${list}`;
+  try{ const r=await aiChat(msg,t=>out.innerHTML=fmtMd(t)+'<span class="typing"></span>'); out.innerHTML=fmtMd(r); }
+  catch(e){ out.innerHTML=`<p class="muted">AI 调用失败：${esc(e.message)}</p>`; }
+}
+
+/* ─────────── settings modal ─────────── */
+const sm=$("#settings-modal");
+$("#open-settings").onclick=()=>{ $("#set-base").value=aiCfg.base||""; $("#set-provider").value=aiCfg.provider||"openai"; $("#set-model").value=aiCfg.model||""; $("#set-key").value=aiCfg.key||""; sm.classList.add("on"); };
+$("#set-cancel").onclick=()=>sm.classList.remove("on");
+sm.onclick=e=>{ if(e.target===sm)sm.classList.remove("on"); };
+$("#set-save").onclick=()=>{ aiCfg={base:$("#set-base").value.trim(),provider:$("#set-provider").value,model:$("#set-model").value.trim(),key:$("#set-key").value.trim()}; LS.set(K_AI,aiCfg); sm.classList.remove("on"); toast(aiConfigured()?"已保存，AI 接口已启用":"已保存（未填全，AI 接口未启用）"); };
+
+/* ─────────── boot ─────────── */
+bootCollections().then(()=>{ updateSaveMode(); renderOverview(); });
+</script>
+</body>
+</html>
