@@ -1,0 +1,76 @@
+/* 墨摘 WeChat Digest — 小红书图文 · 纸张/朱印 编辑风
+   与项目 styles.css 同源：paper & ink editorial, vermilion seal. 1080×1440 (3:4) */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;700;900&display=swap');
+
+:root{
+  --paper:#f4efe4; --paper-2:#efe8d8; --card:#fbf8f0;
+  --ink:#1c1813; --ink-2:#4a4339; --ink-3:#8b8170;
+  --line:#d9cfb8; --line-2:#c8bca0;
+  --vermilion:#d8401f; --vermilion-d:#b8311a; --moss:#41684e; --gold:#a9762a;
+  --r:4px; --r-lg:10px;
+  --serif:"Fraunces","Noto Serif SC","Songti SC",Georgia,serif;
+  --sans:-apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#000}
+
+.page{
+  position:relative;width:1080px;height:1440px;overflow:hidden;
+  background:
+    radial-gradient(1100px 700px at 80% -6%, #f7f2e7, transparent 60%),
+    linear-gradient(180deg,#f6f1e6,#f1ebdd);
+  color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+}
+/* 纸纹 */
+.page::after{
+  content:"";position:absolute;inset:0;z-index:50;pointer-events:none;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.inner{position:absolute;inset:0;padding:92px 84px;display:flex;flex-direction:column;z-index:2}
+
+/* 印章 + 品牌 */
+.seal{width:46px;height:46px;flex:none;border-radius:9px;background:var(--vermilion);color:#f7f3ec;
+  font-family:var(--serif);font-weight:600;font-size:27px;display:grid;place-items:center;
+  box-shadow:0 2px 0 var(--vermilion-d)}
+.brand{display:flex;align-items:center;gap:16px}
+.brand .bt{font-family:var(--serif);font-size:25px;font-weight:600;letter-spacing:.5px}
+.brand .bt em{font-style:italic;color:var(--ink-3);font-weight:400}
+
+.head{display:flex;justify-content:space-between;align-items:center}
+.pageno{font-family:var(--mono);font-size:15px;letter-spacing:2px;color:var(--ink-3)}
+.pageno b{color:var(--vermilion)}
+.tagout{font-family:var(--mono);font-size:16px;letter-spacing:1px;color:var(--ink-2);
+  border:1px solid var(--line-2);border-radius:999px;padding:8px 18px;display:inline-flex;gap:9px;align-items:center}
+.tagout .d{width:8px;height:8px;border-radius:50%;background:var(--vermilion)}
+
+/* 报头 rule */
+.rule{font-family:var(--mono);font-size:15px;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink-3);
+  display:flex;align-items:center;gap:14px;border-top:2px solid var(--ink);padding-top:14px}
+.rule .no{color:var(--vermilion);font-weight:600}
+
+/* 文字 */
+.serif{font-family:var(--serif)}
+.it{font-style:italic}
+.verm{color:var(--vermilion)}
+.moss{color:var(--moss)}
+.gold{color:var(--gold)}
+.muted{color:var(--ink-3)}
+.h1{font-family:var(--serif);font-weight:600;font-size:96px;line-height:1.05;letter-spacing:-1px}
+.h2{font-family:var(--serif);font-weight:600;font-size:66px;line-height:1.12}
+.lead{font-size:29px;line-height:1.55;color:var(--ink-2)}
+.fill{flex:1}
+.hr{height:1px;background:var(--line);border:0}
+
+/* 卡片 */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:34px 36px;
+  box-shadow:0 1px 0 var(--line),0 22px 44px -34px rgba(28,24,19,.45)}
+.kv{font-family:var(--mono);font-size:15px;letter-spacing:1px;color:var(--vermilion);text-transform:uppercase}
+.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line-2);border-radius:999px;
+  padding:8px 18px;font-size:19px;color:var(--ink-2)}
+.tag{font-family:var(--mono);font-size:18px;color:var(--ink-2);border:1px solid var(--line-2);
+  border-radius:var(--r);padding:6px 14px;background:#f7f2e6}
+
+.foot{display:flex;justify-content:space-between;align-items:center;font-size:18px;color:var(--ink-3);
+  border-top:1px solid var(--line);padding-top:22px}
+.foot .mono{font-family:var(--mono);letter-spacing:.5px}

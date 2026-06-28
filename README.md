@@ -14,6 +14,14 @@
 
 ---
 
+<p align="center">
+  <img src="docs/xhs/page-01.png" width="40%" alt="给 Claude 装个公众号采集技能" />
+  &nbsp;
+  <img src="docs/xhs/page-04.png" width="40%" alt="离线 HTML 工作台" />
+</p>
+
+---
+
 ## ✨ 这是什么
 
 把「追公众号太累」这件事拆成三步，职责分明：
