@@ -83,14 +83,47 @@ python3 kb.py serve              # 推荐：本地服务，收藏夹自动存回
 
 ## 🖥 HTML 展示方式
 
-`kb.py export-html` 会把整个知识库渲染进一个**单文件 `output/digest.html`**（CSS/JS 全部内嵌）：
+`kb.py export-html` 把整个知识库渲染进一个**单文件 `output/digest.html`**（CSS/JS 全内嵌），双击即开、不需服务器、断网也能看。四个视图：**总览 / 文章库 / 知识脉络 / 收藏夹**。
 
-- 双击就能打开，不需要服务器、不联网；
-- 四个视图：**总览 / 文章库 / 知识库 / 收藏夹**；
-- 在浏览器里建收藏夹、读逐篇与收藏夹拆解；
-- 用 `kb.py serve` 启动时，收藏夹会自动存回 `knowledge_base.json`（清缓存也不丢）。
+<p align="center">
+  <img src="docs/digest/knowledge-web.png" width="92%" alt="知识脉络：关系图谱 + 反向链接" />
+</p>
 
-模板源码在 [`assets/digest_template.html`](./assets/digest_template.html)，可自行改造样式。
+其中**「知识脉络」**把知识库从平铺列表升级成**能看见关系的网络**（思路借鉴 wiki / Obsidian）：
+
+- **关系图谱** —— 文章成节点、按主题着色，`crossRefs` 连成朱砂色脉络；点节点即聚焦其邻域，支持拖拽平移 / 滚轮缩放 / 图例按主题筛选；
+- **词条详情** —— 选中文章后右栏给出一句话总结、所属主题、关键词，以及两组链接：**本文引用** 与 **被谁引用（反向链接 / backlinks）**；点任意链接图谱联动跳转，或「在文章库中打开」；
+- **脉络索引** —— 主题聚类 / 标签云 / 发布时间线一并保留。
+
+> 收藏夹：双击打开存浏览器；用 `kb.py serve` 启动则自动存回 `knowledge_base.json`（清缓存也不丢）。
+> 模板源码在 [`assets/digest_template.html`](./assets/digest_template.html)，纯前端零依赖，可自行改造样式。
+
+---
+
+## 🧭 采集案例（示例）
+
+以「追几个科技标杆号、攒成可检索的知识网络」为例：
+
+```bash
+# ① 采集多个公众号近期全文（自动入知识库）
+python3 wechat_collector.py collect 机器之心 量子位 晚点LatePost --since 2026-01-01 --count 8
+
+# ② 本地 agent 拆解 + 归类：五段式精析 / 主题聚类 / 交叉引用
+python3 kb.py list --unanalyzed --content --json     # 取待分析批次
+python3 kb.py apply --file batch.json                # 写回分析与关联
+
+# ③ 生成离线工作台
+python3 kb.py export-html
+```
+
+agent 在拆解时把同主题、有承接关系的文章互相写进 `crossRefs`，于是「知识脉络」里就长出一张网络——
+点中一篇《Agent 的可靠性瓶颈在哪》，非邻域淡出、邻域高亮，右栏立刻列出它**引用了谁**、又**被谁引用**：
+
+<p align="center">
+  <img src="docs/digest/knowledge-web-focus.png" width="92%" alt="点选节点后聚焦其邻域，右栏展示正向引用与反向链接" />
+</p>
+
+> 上面两张图为**示例数据**（演示用，非真实采集内容），仅用于展示界面与交互。真实使用时填好凭证、采集你关心的公众号即可。
 
 ---
 

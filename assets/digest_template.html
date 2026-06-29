@@ -140,6 +140,49 @@ main{padding:1.6rem 0 4rem}
 .sec-no{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.16em;color:var(--vermilion);text-transform:uppercase}
 .art{animation:rise .35s both}
 @media(max-width:720px){.coll-grid{grid-template-columns:1fr}.bar-row{grid-template-columns:96px 1fr 40px}}
+
+/* ─── knowledge web (知识脉络) ─── */
+.kb-legend{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin:.2rem 0 .9rem}
+.kb-legend .lg{display:inline-flex;align-items:center;gap:.35rem;font-family:var(--font-mono);font-size:.74rem;color:var(--ink-2);padding:.2rem .55rem;border:1px solid var(--line);border-radius:99px;background:var(--paper);cursor:pointer;transition:border-color .15s,opacity .15s}
+.kb-legend .lg .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.kb-legend .lg:hover{border-color:var(--ink-3)}
+.kb-legend .lg.dim{opacity:.35}
+.kb-legend .hint{font-family:var(--font-mono);font-size:.7rem;color:var(--ink-3);margin-left:auto}
+.kb-grid{display:grid;grid-template-columns:1fr 320px;gap:1.2rem;align-items:start}
+.kb-graph{position:relative;background:radial-gradient(120% 120% at 50% 0%,var(--card),var(--paper-2));border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+.kb-graph svg{display:block;width:100%;height:clamp(360px,52vh,560px);cursor:grab;touch-action:none}
+.kb-graph svg.grab{cursor:grabbing}
+.kb-graph .reset{position:absolute;top:.6rem;right:.6rem;z-index:3}
+.kb-graph .gtip{position:absolute;pointer-events:none;z-index:4;background:var(--ink);color:var(--paper);font-size:.76rem;line-height:1.35;padding:.35rem .55rem;border-radius:var(--r);max-width:230px;opacity:0;transform:translateY(4px);transition:opacity .12s;box-shadow:0 14px 30px -14px rgba(28,24,19,.7)}
+.kb-graph .gtip.on{opacity:1;transform:translateY(0)}
+.kb-graph .gtip b{font-family:var(--font-display);font-weight:600}
+.kb-graph .gtip i{font-style:normal;color:#c9bfa8;font-family:var(--font-mono);font-size:.68rem}
+.edge{stroke:var(--line);stroke-width:1;fill:none}
+.edge.ref{stroke:var(--vermilion);stroke-width:1.4;opacity:.55}
+.edge.lit{stroke:var(--vermilion);stroke-width:2;opacity:.95}
+.node{cursor:pointer}
+.node circle{stroke:var(--card);stroke-width:1.5;transition:opacity .18s,stroke .15s}
+.node text{font-family:var(--font-sans);font-size:9px;fill:var(--ink-2);pointer-events:none;opacity:0;transition:opacity .18s}
+.node:hover circle{stroke:var(--ink)}
+.node.sel circle{stroke:var(--ink);stroke-width:2.5}
+.node.sel text,.node:hover text{opacity:1}
+.kb-graph.has-sel .node:not(.sel):not(.adj){opacity:.28}
+.kb-graph.has-sel .edge:not(.lit){opacity:.12}
+.kb-entry{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:1.1rem 1.15rem;position:sticky;top:74px}
+.kb-entry .acc{font-family:var(--font-mono);font-size:.72rem;color:var(--ink-3);display:flex;gap:.6rem;flex-wrap:wrap}
+.kb-entry h3{font-family:var(--font-display);font-weight:500;font-size:1.16rem;line-height:1.3;margin:.35rem 0 .5rem}
+.kb-entry .sum{font-size:.9rem;color:var(--ink-2);margin:.2rem 0 .7rem}
+.kb-entry h5{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.04em;text-transform:uppercase;color:var(--vermilion);margin:.9rem 0 .35rem;display:flex;align-items:center;gap:.4rem}
+.kb-entry h5 .n{color:var(--ink-3)}
+.kb-entry .links{list-style:none;margin:.1rem 0 0;padding:0}
+.kb-entry .links li{font-size:.86rem;padding:.28rem .5rem;border:1px solid var(--line-2);border-radius:var(--r);margin-bottom:.32rem;cursor:pointer;background:var(--paper);transition:border-color .15s,transform .12s}
+.kb-entry .links li:hover{border-color:var(--vermilion);transform:translateX(2px)}
+.kb-entry .links li .src{display:block;font-family:var(--font-mono);font-size:.66rem;color:var(--ink-3);margin-top:.1rem}
+.kb-entry .none{font-size:.82rem;color:var(--ink-3);font-style:italic;margin:.1rem 0}
+.kb-entry .open{margin-top:1rem;width:100%}
+.kb-index{margin-top:1.4rem}
+.kb-index .section-title{font-size:1.18rem}
+@media(max-width:860px){.kb-grid{grid-template-columns:1fr}.kb-entry{position:static}}
 </style>
 </head>
 <body>
@@ -405,26 +448,185 @@ function addToCollection(id){
   }
 }
 
-/* ─────────── knowledge base ─────────── */
-function renderKB(){
-  // timeline by month
-  const byMonth={}; ARTS.forEach(a=>{ const m=(a.publishDate||"").slice(0,7); if(m)byMonth[m]=(byMonth[m]||0)+1; });
-  const months=Object.keys(byMonth).sort(); const maxM=Math.max(1,...Object.values(byMonth));
-  const tagArr=Object.entries(TAGS); const maxTag=Math.max(1,...tagArr.map(x=>x[1].length));
-  const crossArts=ARTS.filter(a=>(a.crossRefs||[]).length);
-  $("#view-kb").innerHTML=`
-    <h2 class="section-title"><span class="sec-no">No.03</span> 知识库 <span class="sub">topics · tags · timeline · cross-refs</span></h2>
-    <div class="panel"><h3>主题聚类</h3>${TOPICS.length?TOPICS.map(t=>`
-      <div style="margin-bottom:1rem">
-        <div style="font-family:var(--font-display);font-size:1.05rem">${esc(t.name)} <span class="muted">(${(t.articleIds||[]).length})</span></div>
-        ${(t.keywords||[]).length?`<div>${t.keywords.map(k=>`<span class="chip">${esc(k)}</span>`).join("")}</div>`:""}
-        <ul style="margin:.4rem 0 0">${(t.articleIds||[]).map(id=>ARTBYID[id]?`<li style="font-size:.88rem">${esc(ARTBYID[id].title)}</li>`:"").join("")}</ul>
-      </div>`).join(""):'<p class="muted">尚无主题。让 agent 用 <code>kb.py topic-upsert</code> + <code>kb.py set-meta --topics</code> 归类。</p>'}</div>
-    <div class="panel"><h3>标签云</h3><div class="tagcloud">${tagArr.length?tagArr.map(([t,ids])=>`<span class="chip" style="font-size:${(0.7+ids.length/maxTag*0.5).toFixed(2)}rem" data-tag="${esc(t)}">${esc(t)} <small>${ids.length}</small></span>`).join(""):'<span class="muted">尚无标签。</span>'}</div></div>
-    <div class="panel"><h3>发布时间线</h3>${months.length?months.map(m=>`<div class="bar-row"><span class="name">${m}</span><span class="bar"><i style="width:${byMonth[m]/maxM*100}%"></i></span><span class="num">${byMonth[m]}</span></div>`).join(""):'<p class="muted">暂无日期数据</p>'}</div>
-    <div class="panel"><h3>交叉引用</h3>${crossArts.length?crossArts.map(a=>`<div style="margin:.5rem 0;font-size:.9rem"><b>${esc(a.title)}</b><ul style="margin:.2rem 0">${a.crossRefs.map(id=>`<li>${ARTBYID[id]?esc(ARTBYID[id].title):esc(id)}</li>`).join("")}</ul></div>`).join(""):'<p class="muted">尚无交叉引用。让 agent 在拆解时用 <code>kb.py set-meta --crossrefs</code> 建立关联。</p>'}</div>`;
-  $("#view-kb").querySelectorAll("[data-tag]").forEach(c=>c.onclick=()=>gotoLibraryWithTag(c.dataset.tag));
+/* ─────────── knowledge web (知识脉络) ─────────── */
+const KB_BASE_COLORS=["#d8401f","#41684e","#a9762a","#3f5b74","#8a4b6b","#6a7b3a","#b8311a","#536b4a","#9a5b2a"];
+const _topicColor={};
+function strHash(s){ let h=2166136261>>>0; s=String(s); for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return (h>>>0); }
+function rand01(seed){ let x=(seed^0x9e3779b9)>>>0; x^=x<<13; x>>>=0; x^=x>>17; x^=x<<5; x>>>=0; return (x%100000)/100000; }
+function topicColorOf(tid){
+  if(tid==null||tid===""||tid==="__none")return "#9a8f7b";
+  if(_topicColor[tid])return _topicColor[tid];
+  const idx=TOPICS.findIndex(t=>t.id===tid);
+  let c; if(idx>=0&&idx<KB_BASE_COLORS.length)c=KB_BASE_COLORS[idx];
+  else c=`hsl(${strHash(tid)%360} 36% 42%)`;
+  _topicColor[tid]=c; return c;
 }
+const primaryTopic=a=>(a.topicIds&&a.topicIds.length?a.topicIds[0]:"__none");
+const topicLabel=k=>k==="__none"?"未归类":(TOPIC_NAME[k]||k);
+function backlinksOf(id){ return ARTS.filter(a=>(a.crossRefs||[]).includes(id)); }
+
+let KBG=null, kbSel=null, kbLegendKey=null, kbT={k:1,tx:0,ty:0};
+
+function renderKB(){
+  const view=$("#view-kb");
+  if(!ARTS.length){
+    view.innerHTML=`<h2 class="section-title"><span class="sec-no">No.03</span> 知识脉络 <span class="sub">graph · backlinks · index</span></h2>
+      <div class="panel"><p class="muted">知识库尚空。先 <code>python3 wechat_collector.py collect &lt;公众号&gt;</code> 采集,再让本地 agent 用 <code>kb.py list --unanalyzed</code> → <code>kb.py apply</code> 拆解归类,脉络自会浮现。</p></div>`;
+    return;
+  }
+  // ── 1. cluster layout ──
+  const clusters={}; ARTS.forEach(a=>{ const k=primaryTopic(a); (clusters[k]=clusters[k]||[]).push(a); });
+  const orderKeys=[...TOPICS.map(t=>t.id).filter(k=>clusters[k]), ...(clusters["__none"]?["__none"]:[])];
+  const W=1100,H=560,cx=W/2,cy=H/2, nC=orderKeys.length;
+  const Rx = nC<=1?0:W*0.33, Ry = nC<=1?0:H*0.30;
+  const pos={};
+  orderKeys.forEach((k,ci)=>{
+    const ang = nC<=1?0:(ci/nC)*Math.PI*2 - Math.PI/2;
+    const ccx=cx+Rx*Math.cos(ang), ccy=cy+Ry*Math.sin(ang);
+    const m=clusters[k], spread=Math.min(150,46+m.length*7);
+    m.forEach(a=>{ const aa=rand01(strHash(a.id))*Math.PI*2, rr=spread*Math.sqrt(rand01(strHash(a.id+"·")))*(m.length===1?0:1);
+      pos[a.id]={x:ccx+rr*Math.cos(aa), y:ccy+rr*Math.sin(aa)}; });
+  });
+  // ── 2. edges ──
+  const refEdges=[], seen=new Set();
+  ARTS.forEach(a=>(a.crossRefs||[]).forEach(rid=>{ if(!ARTBYID[rid]||rid===a.id)return;
+    const key=[a.id,rid].sort().join("|"); if(seen.has(key))return; seen.add(key); refEdges.push([a.id,rid]); }));
+  const spineEdges=[];
+  orderKeys.forEach(k=>{ const m=clusters[k].slice().sort((x,y)=>strHash(x.id)-strHash(y.id));
+    for(let i=0;i<m.length-1;i++)spineEdges.push([m[i].id,m[i+1].id]); });
+  const conn={}; refEdges.forEach(([a,b])=>{ conn[a]=(conn[a]||0)+1; conn[b]=(conn[b]||0)+1; });
+  // ── 3. de-overlap relaxation ──
+  const ids=Object.keys(pos);
+  for(let it=0;it<70;it++){ for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){
+    const A=pos[ids[i]],B=pos[ids[j]]; let dx=B.x-A.x,dy=B.y-A.y,d=Math.hypot(dx,dy)||0.01, min=27;
+    if(d<min){ const p=(min-d)/2,ux=dx/d,uy=dy/d; A.x-=ux*p;A.y-=uy*p;B.x+=ux*p;B.y+=uy*p; } } }
+  ids.forEach(id=>{ const p=pos[id]; p.x=Math.max(28,Math.min(W-28,p.x)); p.y=Math.max(28,Math.min(H-28,p.y)); });
+  KBG={pos,refEdges,conn};
+  // ── 4. svg ──
+  const edgePath=(e,cls)=>{ const A=pos[e[0]],B=pos[e[1]]; if(!A||!B)return"";
+    const mx=(A.x+B.x)/2,my=(A.y+B.y)/2,dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(-dy,dx)||1,bow=Math.min(38,Math.hypot(dx,dy)*0.14);
+    const qx=mx+(-dy/len)*bow, qy=my+(dx/len)*bow;
+    return `<path class="edge ${cls}" data-a="${esc(e[0])}" data-b="${esc(e[1])}" d="M${A.x.toFixed(1)} ${A.y.toFixed(1)} Q${qx.toFixed(1)} ${qy.toFixed(1)} ${B.x.toFixed(1)} ${B.y.toFixed(1)}"/>`; };
+  const edgesSvg=spineEdges.map(e=>edgePath(e,"")).join("")+refEdges.map(e=>edgePath(e,"ref")).join("");
+  const nodesSvg=ARTS.map(a=>{ const p=pos[a.id], r=(6+Math.min(conn[a.id]||0,6)*1.2).toFixed(1), c=topicColorOf(primaryTopic(a));
+    return `<g class="node" data-id="${esc(a.id)}" transform="translate(${p.x.toFixed(1)},${p.y.toFixed(1)})"><circle r="${r}" fill="${c}"/><text y="${(-r-4)}" text-anchor="middle">${esc((a.title||"").slice(0,11))}</text></g>`; }).join("");
+  // ── 5. legend ──
+  const legend=orderKeys.map(k=>`<span class="lg" data-topic="${esc(k)}"><span class="dot" style="background:${topicColorOf(k)}"></span>${esc(topicLabel(k))} <small>${clusters[k].length}</small></span>`).join("");
+  // ── 6. index strip (保留旧分析) ──
+  const byMonth={}; ARTS.forEach(a=>{ const m=(a.publishDate||"").slice(0,7); if(m)byMonth[m]=(byMonth[m]||0)+1; });
+  const months=Object.keys(byMonth).sort(), maxM=Math.max(1,...Object.values(byMonth));
+  const tagArr=Object.entries(TAGS), maxTag=Math.max(1,...tagArr.map(x=>x[1].length),1);
+  view.innerHTML=`
+    <h2 class="section-title"><span class="sec-no">No.03</span> 知识脉络 <span class="sub">graph · backlinks · index</span></h2>
+    <div class="kb-legend" id="kb-legend">${legend}<span class="hint">点节点看词条 · 拖拽平移 · 滚轮缩放</span></div>
+    <div class="kb-grid">
+      <div class="kb-graph" id="kb-graph">
+        <button class="btn sm reset" id="kb-reset">重置视图</button>
+        <div class="gtip" id="kb-gtip"></div>
+        <svg id="kb-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><g id="kb-vp">${edgesSvg}${nodesSvg}</g></svg>
+      </div>
+      <aside class="kb-entry" id="kb-entry"></aside>
+    </div>
+    <div class="kb-index">
+      <h2 class="section-title"><span class="sec-no">No.03b</span> 脉络索引 <span class="sub">topics · tags · timeline</span></h2>
+      <div class="panel"><h3>主题聚类</h3>${TOPICS.length?TOPICS.map(t=>`
+        <div style="margin-bottom:.8rem">
+          <div style="font-family:var(--font-display);font-size:1.02rem"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${topicColorOf(t.id)};margin-right:.4rem"></span>${esc(t.name)} <span class="muted">(${(t.articleIds||[]).length})</span></div>
+          ${(t.keywords||[]).length?`<div style="margin-top:.2rem">${t.keywords.map(k=>`<span class="chip">${esc(k)}</span>`).join("")}</div>`:""}
+        </div>`).join(""):'<p class="muted">尚无主题。让 agent 用 <code>kb.py topic-upsert</code> + <code>kb.py set-meta --topics</code> 归类。</p>'}</div>
+      <div class="panel"><h3>标签云</h3><div class="tagcloud">${tagArr.length?tagArr.map(([t,ids])=>`<span class="chip" style="font-size:${(0.7+ids.length/maxTag*0.5).toFixed(2)}rem" data-tag="${esc(t)}">${esc(t)} <small>${ids.length}</small></span>`).join(""):'<span class="muted">尚无标签。</span>'}</div></div>
+      <div class="panel"><h3>发布时间线</h3>${months.length?months.map(m=>`<div class="bar-row"><span class="name">${m}</span><span class="bar"><i style="width:${byMonth[m]/maxM*100}%"></i></span><span class="num">${byMonth[m]}</span></div>`).join(""):'<p class="muted">暂无日期数据</p>'}</div>
+    </div>`;
+  view.querySelectorAll("[data-tag]").forEach(c=>c.onclick=()=>gotoLibraryWithTag(c.dataset.tag));
+  wireKBGraph();
+  // default selection = most connected
+  let def=ARTS[0]; ARTS.forEach(a=>{ if((conn[a.id]||0)>(conn[def.id]||0))def=a; });
+  kbT={k:1,tx:0,ty:0}; applyKBTransform();
+  selectKBNode(def.id,true);
+}
+
+function applyKBTransform(){ const vp=$("#kb-vp"); if(vp)vp.setAttribute("transform",`translate(${kbT.tx} ${kbT.ty}) scale(${kbT.k})`); }
+
+function renderKBEntry(id){
+  const a=ARTBYID[id], host=$("#kb-entry"); if(!a||!host)return;
+  const an=a.analysis||{};
+  const li=(arr,label)=>arr.length?`<ul class="links">${arr.map(x=>`<li data-go="${esc(x.id)}">${esc(x.title)}<span class="src">${esc(x.account||"")}${x.account&&x.date?" · ":""}${esc(x.date||"")}</span></li>`).join("")}</ul>`:`<p class="none">${label}</p>`;
+  const refs=(a.crossRefs||[]).map(rid=>ARTBYID[rid]).filter(Boolean).map(x=>({id:x.id,title:x.title,account:x.account,date:x.publishDate}));
+  const backs=backlinksOf(id).map(x=>({id:x.id,title:x.title,account:x.account,date:x.publishDate}));
+  const topics=(a.topicIds||[]);
+  host.innerHTML=`
+    <div class="acc"><span>${esc(a.account)||"(未知公众号)"}</span><span>${esc(a.publishDate)||"----"}</span></div>
+    <h3>${esc(a.title)}</h3>
+    ${an.summary?`<p class="sum">${esc(an.summary)}</p>`:(a.digest?`<p class="sum">${esc(a.digest)}</p>`:"")}
+    ${topics.length?`<h5>所属主题</h5><div>${topics.map(t=>`<span class="chip" style="border-color:${topicColorOf(t)};color:${topicColorOf(t)}">${esc(TOPIC_NAME[t]||t)}</span>`).join("")}</div>`:""}
+    ${(an.tags||[]).length?`<h5>关键词</h5><div>${an.tags.map(t=>`<span class="chip" data-tag="${esc(t)}">${esc(t)}</span>`).join("")}</div>`:""}
+    <h5>本文引用 <span class="n">${refs.length}</span></h5>${li(refs,"未引用其他文章。")}
+    <h5>被谁引用 <span class="n">${backs.length}</span></h5>${li(backs,"暂无文章引用本文。")}
+    <button class="btn sm open" data-open="${esc(id)}">在文章库中打开 ↗</button>`;
+  host.querySelectorAll("[data-go]").forEach(el=>el.onclick=()=>{ if(KBG.pos[el.dataset.go])selectKBNode(el.dataset.go); else openInLibrary(el.dataset.go); });
+  host.querySelectorAll("[data-tag]").forEach(el=>el.onclick=()=>gotoLibraryWithTag(el.dataset.tag));
+  const ob=host.querySelector("[data-open]"); if(ob)ob.onclick=()=>openInLibrary(id);
+}
+
+function selectKBNode(id,soft){
+  kbSel=id; kbLegendKey=null;
+  const graph=$("#kb-graph"); if(!graph)return;
+  const adj=new Set(); KBG.refEdges.forEach(([a,b])=>{ if(a===id)adj.add(b); else if(b===id)adj.add(a); });
+  graph.classList.toggle("has-sel",!soft);
+  graph.querySelectorAll(".node").forEach(n=>{ const nid=n.dataset.id; n.classList.toggle("sel",nid===id); n.classList.toggle("adj",adj.has(nid)); });
+  graph.querySelectorAll(".edge").forEach(p=>p.classList.toggle("lit",p.dataset.a===id||p.dataset.b===id));
+  $("#kb-legend")&&$("#kb-legend").querySelectorAll(".lg").forEach(l=>l.classList.remove("dim"));
+  renderKBEntry(id);
+}
+
+function highlightCluster(key){
+  const graph=$("#kb-graph"); if(!graph)return;
+  if(kbLegendKey===key){ resetKBView(); return; }
+  kbLegendKey=key; kbSel=null;
+  graph.classList.add("has-sel");
+  graph.querySelectorAll(".node").forEach(n=>{ const a=ARTBYID[n.dataset.id]; const match=primaryTopic(a)===key; n.classList.toggle("adj",match); n.classList.remove("sel"); });
+  graph.querySelectorAll(".edge").forEach(p=>p.classList.remove("lit"));
+  $("#kb-legend").querySelectorAll(".lg").forEach(l=>l.classList.toggle("dim",l.dataset.topic!==key));
+}
+
+function resetKBView(){
+  kbSel=null; kbLegendKey=null; kbT={k:1,tx:0,ty:0}; applyKBTransform();
+  const graph=$("#kb-graph"); if(!graph)return;
+  graph.classList.remove("has-sel");
+  graph.querySelectorAll(".node").forEach(n=>n.classList.remove("sel","adj"));
+  graph.querySelectorAll(".edge").forEach(p=>p.classList.remove("lit"));
+  $("#kb-legend").querySelectorAll(".lg").forEach(l=>l.classList.remove("dim"));
+}
+
+function openInLibrary(id){
+  filt={q:"",account:"",topic:"",tag:"",analyzed:false};
+  document.querySelector('.tab[data-view="library"]').click();
+  setTimeout(()=>{ const card=[...document.querySelectorAll('#view-library .art')].find(c=>c.dataset.id===id);
+    if(card){ card.scrollIntoView({behavior:"smooth",block:"center"}); card.style.boxShadow="0 0 0 2px var(--vermilion)";
+      setTimeout(()=>{ card.style.transition="box-shadow .6s"; card.style.boxShadow=""; },1500); } },70);
+}
+
+function wireKBGraph(){
+  const graph=$("#kb-graph"), svg=$("#kb-svg"), tip=$("#kb-gtip"); if(!svg)return;
+  $("#kb-reset").onclick=resetKBView;
+  $("#kb-legend").querySelectorAll(".lg").forEach(l=>l.onclick=()=>highlightCluster(l.dataset.topic));
+  // node click + hover tooltip (delegated)
+  svg.addEventListener("click",e=>{ const n=e.target.closest(".node"); if(n&&!svg._moved)selectKBNode(n.dataset.id); });
+  svg.addEventListener("mouseover",e=>{ const n=e.target.closest(".node"); if(!n)return; const a=ARTBYID[n.dataset.id]; if(!a)return;
+    tip.innerHTML=`<b>${esc(a.title)}</b><br><i>${esc(a.account||"")} · ${esc(a.publishDate||"")}</i>`; tip.classList.add("on"); });
+  svg.addEventListener("mousemove",e=>{ if(!tip.classList.contains("on"))return; const r=graph.getBoundingClientRect();
+    let x=e.clientX-r.left+12,y=e.clientY-r.top+12; x=Math.min(x,r.width-data_tip_w(tip)); tip.style.left=x+"px"; tip.style.top=y+"px"; });
+  svg.addEventListener("mouseout",e=>{ if(e.target.closest(".node"))tip.classList.remove("on"); });
+  // pan + zoom
+  let drag=null; svg._moved=false;
+  svg.addEventListener("mousedown",e=>{ drag={x:e.clientX,y:e.clientY,tx:kbT.tx,ty:kbT.ty}; svg._moved=false; svg.classList.add("grab"); });
+  window.addEventListener("mousemove",e=>{ if(!drag)return; const dx=e.clientX-drag.x,dy=e.clientY-drag.y; if(Math.abs(dx)+Math.abs(dy)>3)svg._moved=true;
+    const sc=1100/svg.getBoundingClientRect().width; kbT.tx=drag.tx+dx*sc; kbT.ty=drag.ty+dy*sc; applyKBTransform(); });
+  window.addEventListener("mouseup",()=>{ if(drag){ drag=null; svg.classList.remove("grab"); setTimeout(()=>svg._moved=false,30); } });
+  svg.addEventListener("wheel",e=>{ e.preventDefault(); const f=e.deltaY<0?1.12:1/1.12; const nk=Math.max(0.5,Math.min(3,kbT.k*f));
+    kbT.tx=550-(550-kbT.tx)*(nk/kbT.k); kbT.ty=280-(280-kbT.ty)*(nk/kbT.k); kbT.k=nk; applyKBTransform(); },{passive:false});
+}
+function data_tip_w(tip){ return Math.min(tip.offsetWidth||120,230); }
 
 /* ─────────── collections ─────────── */
 let selColl="";
