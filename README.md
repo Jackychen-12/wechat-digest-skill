@@ -15,6 +15,11 @@
 ---
 
 <p align="center">
+  <img src="docs/digest/knowledge-web.png" width="88%" alt="知识脉络：关系图谱 + 反向链接 + 词条详情" />
+</p>
+<p align="center"><sub>离线 HTML 工作台「知识脉络」视图 —— 文章成节点、按主题着色、<code>crossRefs</code> 连线，点节点即看正向引用与反向链接（真实采集：晚点LatePost + 数字生命卡兹克）</sub></p>
+
+<p align="center">
   <img src="docs/xhs/page-01.png" width="40%" alt="给 Claude 装个公众号采集技能" />
   &nbsp;
   <img src="docs/xhs/page-04.png" width="40%" alt="离线 HTML 工作台" />
