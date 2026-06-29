@@ -100,13 +100,13 @@ python3 kb.py serve              # 推荐：本地服务，收藏夹自动存回
 
 ---
 
-## 🧭 采集案例（示例）
+## 🧭 采集案例：晚点 × 卡兹克
 
-以「追几个科技标杆号、攒成可检索的知识网络」为例：
+下面是一次**真实采集**——把 **晚点LatePost** 与 **数字生命卡兹克** 近期各 10 篇全文拉下来，攒成一张可检索的知识网络：
 
 ```bash
-# ① 采集多个公众号近期全文（自动入知识库）
-python3 wechat_collector.py collect 机器之心 量子位 晚点LatePost --since 2026-01-01 --count 8
+# ① 采集两个公众号近期全文（自动入知识库）
+python3 wechat_collector.py collect 晚点LatePost 数字生命卡兹克 --count 10
 
 # ② 本地 agent 拆解 + 归类：五段式精析 / 主题聚类 / 交叉引用
 python3 kb.py list --unanalyzed --content --json     # 取待分析批次
@@ -116,14 +116,13 @@ python3 kb.py apply --file batch.json                # 写回分析与关联
 python3 kb.py export-html
 ```
 
-agent 在拆解时把同主题、有承接关系的文章互相写进 `crossRefs`，于是「知识脉络」里就长出一张网络——
-点中一篇《Agent 的可靠性瓶颈在哪》，非邻域淡出、邻域高亮，右栏立刻列出它**引用了谁**、又**被谁引用**：
+20 篇被归入 **6 个主题**（AI 算力与存储 / AI 资本与商业化 / 超级 App 的 AI 改造 / Agent 与 Coding 工程 / AI 时代的人与方法 / 消费与出行）。最妙的是**跨公众号的连线**：agent 把有承接关系的文章互相写进 `crossRefs`，于是点中晚点的《三波人接力，六个月捧出一万亿》（智谱冲上万亿），右栏的「被谁引用」里就出现了卡兹克的《实测 GLM-5.2》——GLM 正是智谱的模型，两个号的内容被脉络自动接上了：
 
 <p align="center">
-  <img src="docs/digest/knowledge-web-focus.png" width="92%" alt="点选节点后聚焦其邻域，右栏展示正向引用与反向链接" />
+  <img src="docs/digest/knowledge-web-focus.png" width="92%" alt="点选智谱万亿一文，反向链接里出现跨公众号关联的 GLM 实测" />
 </p>
 
-> 上面两张图为**示例数据**（演示用，非真实采集内容），仅用于展示界面与交互。真实使用时填好凭证、采集你关心的公众号即可。
+> 以上为**真实采集**数据（晚点LatePost + 数字生命卡兹克，各 10 篇，2026-06），由本地 agent 逐篇精析并归类。换成你关心的公众号，照此流程即可。
 
 ---
 
