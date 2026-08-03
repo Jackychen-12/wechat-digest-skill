@@ -14,6 +14,16 @@
 
 ---
 
+> **🔧 本次修复（采集「空结果/频控」问题）**：修复了导致采集“空”的一系列缺陷——
+> ① 频控/凭证失效时已采文章不再全部丢弃（边采边落盘 `*_partial.json`）；② 频控冷却从 60s 提到 300s 逐次翻倍，
+> 新增 `--freq-cooldown/--freq-retries`；③ 修正 `app_msg_cnt` 为字符串时的崩溃；④ 能识别微信验证页
+> （302 跳 `wappoc_appmsgcaptcha`）与失效/已删除页，不再静默吐空正文、并按状态汇报「空率/空因」；
+> ⑤ 修复分享卡片页正文抽取与搜狗跳转解析。另实测确认：`search` 关键词搜索接口不存在（`ret=200009`），
+> 已标注不可用；新增备选命令 `collect-urls`（URL/文件/RSS → 逐篇全文，不经 appmsg），作为 `collect`
+> 被频控时的受控备选。采集优先级：**`collect`（appmsg，最准确）为首选，`collect-urls` 仅在频控拿不到且经确认后用**。
+
+---
+
 <p align="center">
   <img src="docs/digest/knowledge-web.png" width="88%" alt="知识脉络：关系图谱 + 反向链接 + 词条详情" />
 </p>
@@ -33,7 +43,7 @@
 
 | 步骤 | 谁来做 | 产物 |
 | --- | --- | --- |
-| **① 采集** | `wechat_collector.py`（脚本） | 按公众号名称稳定拉**全文**，或按关键词跨号搜全网文章 → `articles_*.json` + Excel |
+| **① 采集** | `wechat_collector.py`（脚本） | **首选** `collect`（appmsg）按公众号名稳定拉**全文**；被频控时可**经确认**改用备选 `collect-urls`（URL/RSS）→ `articles_*.json` + Excel（`search` 已验证不可用：`ret=200009`） |
 | **② 知识库** | `kb.py` + 本地 agent | 去重合并进 `knowledge_base.json`，逐篇五段式精析（总结/观点/数据/标签/适用人群）+ 主题聚类/标签倒排/交叉引用 |
 | **③ 呈现** | `render_html.py` + 浏览器 | 生成**自包含离线 HTML 工作台**（总览 / 文章库 / 知识库 / 收藏夹），双击即开 |
 
@@ -70,6 +80,10 @@ python3 wechat_collector.py whoami        # 校验登录态
 
 # ① 采集（默认抓正文 + 自动入知识库）
 python3 wechat_collector.py collect 晚点LatePost --since 2025-01-01 --count 10
+#   频控敏感时可调慢：--freq-cooldown 600 --freq-retries 1
+#   中断（频控/凭证失效）不会白跑：已采到的会写入 output/*_partial.json，重跑自动去重
+#   ★ collect（appmsg）是首选（最准确）；若被频控 ret=200013，优先等冷却/换时段重跑 collect，
+#      确需备选时才（自行确认、且完整性取决于来源）走：collect-urls urls.txt   # URL/文件/RSS
 
 # ② 让本地 agent 拆解：取批次 → 写回（详见 SKILL.md「知识库分析工作流」）
 python3 kb.py list --unanalyzed --content --json     # 取待分析批次

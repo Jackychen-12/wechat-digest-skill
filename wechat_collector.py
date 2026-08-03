@@ -56,11 +56,15 @@ REQUEST_DELAY_MIN = 3.0
 REQUEST_DELAY_MAX = 6.0
 CONTENT_DELAY_MIN = 1.5
 CONTENT_DELAY_MAX = 3.5
-FREQ_COOLDOWN = 60
+# 微信 appmsg 频控(ret=200013) 的实际冷却是几十分钟级，60s 后重试几乎必然再次撞墙；
+# 这里默认拉到 5 分钟并逐次翻倍，真正的兜底是「已采集的进度一定落盘」。
+FREQ_COOLDOWN = 300
+FREQ_COOLDOWN_FACTOR = 2.0
 MAX_FREQ_RETRIES = 2
 LIST_PAGE_SIZE = 5
 MAX_LIST_PAGES = 40
 CONTENT_RETRIES = 3
+CONTENT_BLOCKED_COOLDOWN = 30          # 文章页撞验证页时的等待（比列表接口轻）
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -206,14 +210,80 @@ def slice_between(html, start_re, end_re):
     return rest[:end_idx]
 
 
+def _extract_div_inner(html, start_idx):
+    """从 start_idx 处的 <div ...> 起做 div 深度配对，返回其内层 HTML。
+
+    比「截到第一个 </div>」可靠：公众号正文里 div/section 多层嵌套，
+    按第一个 </div> 截断会把正文腰斩；按「</div> 后面跟 <script」找又会越界
+    多吞页面尾部。深度配对是唯一稳的做法。
+    """
+    open_end = html.find(">", start_idx)
+    if open_end == -1:
+        return ""
+    pos = open_end + 1
+    depth = 1
+    for m in re.finditer(r"<div\b|</div\s*>", html[pos:], flags=re.I):
+        if m.group(0).lower().startswith("</"):
+            depth -= 1
+            if depth == 0:
+                return html[pos:pos + m.start()]
+        else:
+            depth += 1
+    return html[pos:]
+
+
+_BODY_TAG_RE = re.compile(r"<div\b[^>]*>", re.I)
+_BODY_HIT_RE = re.compile(r'id\s*=\s*["\']js_content["\']'
+                          r'|class\s*=\s*["\'][^"\']*rich_media_content[^"\']*["\']', re.I)
+
+
 def slice_content_html(html):
-    """取出 mp 文章页正文 div 的内层 HTML（未清洗，供取文本+图片）。"""
-    return (
-        slice_between(html, r'<div[^>]*id="js_content"[^>]*>',
-                      r'</div>\s*(?:<script|<div[^>]*id="js_tags")')
-        or slice_between(html, r'<div[^>]*id="js_content"[^>]*>', r'</div>')
-        or slice_between(html, r'<div[^>]*class="rich_media_content"[^>]*>', r'</div>\s*<script')
-    )
+    """取出 mp 文章页正文 div 的内层 HTML（未清洗，供取文本+图片）。
+
+    一个页面可能有多个 id="js_content" / rich_media_content 容器——最典型的是
+    「分享一篇文章」卡片页，它把 id="js_content" 挂在一个**空壳**
+    <div class="original_panel_content"> 上，真正的正文在卡片指向的原文里。
+    所以这里枚举所有候选容器、取「清洗后正文最长」的那个，空壳自然被淘汰。
+    """
+    if not html:
+        return ""
+    best, best_len = "", -1
+    for m in _BODY_TAG_RE.finditer(html):
+        if not _BODY_HIT_RE.search(m.group(0)):
+            continue
+        inner = _extract_div_inner(html, m.start())
+        n = len(html_to_text(inner))
+        if n > best_len:
+            best, best_len = inner, n
+    return best
+
+
+def share_source_url(html):
+    """「分享一篇文章」卡片页里「阅读全文」指向的原文链接（没有则空串）。"""
+    m = re.search(r'<[a-z]+[^>]*id=["\']js_share_source["\'][^>]*>', html or "", flags=re.I)
+    if not m:
+        return ""
+    u = re.search(r'data-url=["\']([^"\']+)["\']', m.group(0), flags=re.I)
+    return decode_entities(u.group(1)).replace("&amp;", "&") if u else ""
+
+
+def permanent_link(html, fallback=""):
+    """从页面里的 biz/mid/idx 还原**永久链接**。
+
+    搜狗给的 /s?src=11&timestamp=…&signature=… 链接会过期，且每次搜到的都不一样，
+    直接拿它算 id 会导致同一篇文章反复入库。biz+mid+idx 唯一确定一篇文章。
+    """
+    def var(name):
+        for m in re.finditer(r'var\s+%s\s*=\s*([^;]+);' % name, html or ""):
+            for v in re.findall(r'"([^"]*)"', m.group(1)):
+                if v:
+                    return v
+        return ""
+
+    biz, mid, idx = var("biz"), var("mid") or var("appmsgid"), var("idx")
+    if biz and mid:
+        return "https://mp.weixin.qq.com/s?__biz=%s&mid=%s&idx=%s" % (biz, mid, idx or "1")
+    return fallback
 
 
 def extract_images(content_html):
@@ -242,12 +312,70 @@ def pick(html, re_):
     return decode_entities(re.sub(r"<[^>]+>", "", m.group(1))).strip() if m else ""
 
 
-def is_blocked_page(html):
-    """文章页触发风控/验证（粗判）。"""
+# ── 页面性质判定 ──────────────────────────────────────────────
+# 微信对「失效链接 / 已删除 / 验证页」统统返回 HTTP 200 + 一个模板页，
+# 只看状态码分辨不出来，必须看页面特征，否则只能得到「静默空正文」。
+#
+# 最关键的一点（实测得出）：微信真正的反爬页是 301/302 重定向到
+#   https://mp.weixin.qq.com/mp/wappoc_appmsgcaptcha?poc_token=...&target_url=...
+# 这个验证页的 <title> 是空的、正文区没有任何中文提示词，
+# 所以只靠 HTML 内容根本认不出来——必须看**最终 URL**。
+_BLOCKED_URL_RE = re.compile(r"appmsgcaptcha|verifycode|antispider|poc_token|/mp/captcha", re.I)
+_BLOCKED_RE = re.compile(r"请输入验证码|antispider|环境异常|访问过于频繁|去验证"
+                         r"|操作过于频繁|访问过快")
+_GONE_RE = re.compile(r"已被发布者删除|因违规无法查看|内容已被投诉|无法查看此内容"
+                      r"|该账号已自主注销|已被屏蔽|此内容发送失败")
+_INVALID_RE = re.compile(r"参数错误|系统错误|请求参数有误|链接已过期")
+
+STATUS_LABEL = {
+    "ok": "",
+    "digest": "正文未取到，已用摘要兜底",
+    "empty": "页面正常但无正文（纯图片/视频推送）",
+    "share": "分享卡片页，未能跟到原文",
+    "blocked": "⚠ 被微信验证页拦截（需降速/换 IP 后重采）",
+    "gone": "已删除 / 违规下架",
+    "invalid": "⚠ 链接失效或参数错误（该链接已不可用）",
+    "neterror": "⚠ 网络请求失败",
+    "nolink": "列表未给出文章链接",
+}
+
+
+def classify_page(html, body_text="", final_url=""):
+    """判定文章页性质，返回状态串。
+
+    ok       正常取到正文
+    blocked  命中验证页/反爬（可重试，但要降速）
+    gone     已删除 / 违规 / 账号注销（永久失败，别重试）
+    invalid  参数错误 / 链接失效（永久失败，别重试）
+    share    「分享一篇文章」卡片页，正文在 data-url 指向的原文里
+    empty    页面结构正常但确实没有正文（纯图片/视频推送）
+
+    final_url 传 requests 的 r.url（跟完重定向后的地址）——这是识别
+    微信验证页唯一可靠的信号，不传就会把风控误判成「链接失效」。
+    """
+    if final_url and _BLOCKED_URL_RE.search(final_url):
+        return "blocked"
     if not html:
-        return False
-    return bool(re.search(r"请输入验证码|antispider|环境异常|访问过于频繁", html)) \
-        and "js_content" not in html
+        return "invalid"
+    if body_text and len(body_text) >= 20:
+        return "ok"
+    if _BLOCKED_RE.search(html):
+        return "blocked"
+    if _GONE_RE.search(html):
+        return "gone"
+    if share_source_url(html):
+        return "share"
+    if _INVALID_RE.search(html):
+        return "invalid"
+    if 'id="js_content"' not in html and "rich_media_content" not in html:
+        # 连正文容器都没有：基本都是错误页 / 验证页模板
+        return "invalid"
+    return "empty"
+
+
+def is_blocked_page(html):
+    """向后兼容的薄封装（旧调用点仍可用）。"""
+    return classify_page(html, "") == "blocked"
 
 
 # ════════════════════════════════════════════════════════════════
@@ -256,6 +384,19 @@ def is_blocked_page(html):
 
 def polite_sleep(lo, hi):
     time.sleep(random.uniform(lo, hi))
+
+
+def _as_int(v, default=0):
+    """MP 接口的计数字段有时是 int 有时是字符串，统一成 int 再比较。
+
+    不做这层归一化的话，`begin >= app_msg_cnt` 会抛
+    TypeError: '>=' not supported between instances of 'int' and 'str'，
+    把一整轮已经采好的文章连带 crash 掉。
+    """
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return default
 
 
 def api_get(session, token, path, extra_params):
@@ -286,11 +427,14 @@ def api_get(session, token, path, extra_params):
             return data
         if ret == 200013:
             if attempt < MAX_FREQ_RETRIES:
-                print(f"   ⏳ 命中频控(ret=200013)，冷却 {FREQ_COOLDOWN}s 后重试"
+                wait = int(FREQ_COOLDOWN * (FREQ_COOLDOWN_FACTOR ** attempt))
+                print(f"   ⏳ 命中频控(ret=200013)，冷却 {wait}s 后重试"
                       f"（第 {attempt + 1}/{MAX_FREQ_RETRIES} 次）…")
-                time.sleep(FREQ_COOLDOWN)
+                time.sleep(wait)
                 continue
-            raise FreqControlError("多次重试仍被频控，已停止。请稍后（建议隔几十分钟）再跑。")
+            raise FreqControlError(
+                "多次重试仍被频控。微信 appmsg 的频控冷却通常是几十分钟到数小时，"
+                "不是几秒——请隔一段时间再跑，并减小 --count / 减少账号数。")
         if ret in (200003, 200002, -3) or "session" in str(err).lower() or "token" in str(err).lower():
             raise AuthError(f"凭证失效或无权限（ret={ret}, err={err}）。请重新登录获取 token+cookie。")
         raise ApiError(f"接口错误 ret={ret}, err={err}")
@@ -298,10 +442,13 @@ def api_get(session, token, path, extra_params):
     raise ApiError("未知错误")
 
 
-def fetch_article(url):
+def fetch_article(url, _depth=0):
     """
-    抓取并清洗单篇正文，返回 dict：{content, images, ogCover}。
-    失败时 content 为空串（不影响整体）。
+    抓取并清洗单篇正文，返回 dict：{content, images, ogCover, status, link}。
+
+    status 见 classify_page —— 关键点是**把「空」的原因说清楚**：
+    风控页 / 失效链接 / 已删除 / 真的没正文，这四种以前都被压成一个空串，
+    导致「空了但没人知道为什么」，而且还会对永久失败的链接白重试 3 次。
     """
     headers = {
         "User-Agent": UA,
@@ -309,33 +456,53 @@ def fetch_article(url):
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Referer": MP_BASE + "/",
     }
-    last = {"content": "", "images": [], "ogCover": ""}
+    last = {"content": "", "images": [], "ogCover": "", "status": "neterror", "link": url}
     for attempt in range(CONTENT_RETRIES):
         polite_sleep(CONTENT_DELAY_MIN, CONTENT_DELAY_MAX)
         try:
             r = requests.get(url, headers=headers, timeout=20)
             html = r.text or ""
-            if is_blocked_page(html):
-                last = {"content": "__blocked__", "images": [], "ogCover": ""}
-            else:
-                content_html = slice_content_html(html)
-                body = html_to_text(content_html) if content_html else ""
-                # 正文兜底：取不到 div 时退回 og:description
-                if not body or len(body) < 20:
-                    og = pick(html, r'<meta property="og:description" content="([^"]*)"')
-                    if og and len(og) > len(body):
-                        body = og
-                images = extract_images(content_html)
-                og_cover = pick(html, r'<meta property="og:image" content="([^"]*)"')
-                if body and len(body) >= 20:
-                    return {"content": body, "images": images, "ogCover": og_cover}
-                last = {"content": body, "images": images, "ogCover": og_cover}
+            final_url = r.url or url
         except requests.RequestException:
-            pass
+            if attempt < CONTENT_RETRIES - 1:
+                time.sleep(1.5 * (2 ** attempt) + random.random())
+            continue
+
+        content_html = slice_content_html(html)
+        body = html_to_text(content_html) if content_html else ""
+        images = extract_images(content_html)
+        og_cover = pick(html, r'<meta property="og:image" content="([^"]*)"')
+        status = classify_page(html, body, final_url)
+
+        if status == "ok":
+            return {"content": body, "images": images, "ogCover": og_cover,
+                    "status": "ok", "link": permanent_link(html, url)}
+
+        # 分享卡片页：正文在「阅读全文」指向的原文里，跟进一次
+        if status == "share" and _depth == 0:
+            src = share_source_url(html)
+            if src:
+                deep = fetch_article(src, _depth=1)
+                if deep.get("content"):
+                    deep["ogCover"] = deep.get("ogCover") or og_cover
+                    return deep
+
+        # 结构正常却取不到正文时，退回 og:description（只是摘要级兜底，如实标注）
+        if status in ("empty", "share"):
+            og = pick(html, r'<meta property="og:description" content="([^"]*)"')
+            if og and len(og) > len(body):
+                body, status = og, "digest"
+
+        last = {"content": body, "images": images, "ogCover": og_cover,
+                "status": status, "link": permanent_link(html, url)}
+
+        # 永久性失败不必重试；只有风控页值得等更久再试一次
+        if status != "blocked":
+            break
         if attempt < CONTENT_RETRIES - 1:
-            time.sleep(1.5 * (2 ** attempt) + random.random())
-    if last.get("content") == "__blocked__":
-        last["content"] = ""
+            wait = CONTENT_BLOCKED_COOLDOWN * (attempt + 1)
+            print(f"      ⏳ 文章页命中验证/风控，等 {wait}s 再试…")
+            time.sleep(wait)
     return last
 
 
@@ -368,8 +535,57 @@ def unix_to_date(ts):
         return ""
 
 
-def collect_account(session, token, name, since, count, fetch_content):
-    """采集单个公众号，返回文章记录列表。"""
+def fetch_contents(records, label=""):
+    """为一批记录补抓正文，并汇报真实的「空率」与空的原因分布。
+
+    已有 content 的记录会跳过，所以中断后补抓、重复调用都安全。
+    """
+    if not records:
+        return 0
+    print(f"   ↓ 抓取正文（{len(records)} 篇）{label}…")
+    okc = 0
+    reasons = {}
+    for i, rec in enumerate(records, 1):
+        # 已有正文的跳过但**仍计为成功**，否则重跑/补抓时空率会被虚报。
+        if rec.get("content"):
+            okc += 1
+            continue
+        if not rec.get("link"):
+            reasons["nolink"] = reasons.get("nolink", 0) + 1
+            continue
+        res = fetch_article(rec["link"])
+        rec["content"] = res["content"]
+        rec["images"] = res["images"]
+        rec["contentStatus"] = res.get("status", "")
+        if not rec.get("cover") and res.get("ogCover"):
+            rec["cover"] = res["ogCover"]
+        if res.get("status") == "ok":
+            okc += 1
+            flag = f"{len(res['content'])} 字 / {len(res['images'])} 图"
+        else:
+            st = res.get("status", "")
+            reasons[st] = reasons.get(st, 0) + 1
+            flag = f"未取到 · {STATUS_LABEL.get(st, st)}"
+        print(f"      {i}/{len(records)} {flag}")
+
+    n = len(records)
+    print(f"   ↳ 正文成功 {okc}/{n}（空率 {(n - okc) / n * 100:.0f}%）")
+    for st, c in sorted(reasons.items(), key=lambda kv: -kv[1]):
+        print(f"      · {STATUS_LABEL.get(st, st)} × {c}")
+    if reasons.get("blocked"):
+        print("      → 出现风控页：请过一段时间对同一批重跑，"
+              "kb ingest 会自动用更长的正文补全（不会重复入库）。")
+    return okc
+
+
+def collect_account(session, token, name, since, count, fetch_content, sink=None):
+    """采集单个公众号，返回文章记录列表。
+
+    sink 若传入，则每采到一条就立即 append 进去。这是为了避开一个很痛的坑：
+    以前频控/凭证失效是直接从函数里抛异常，调用方的 `all.extend(collect_account(...))`
+    根本执行不到，于是屏幕上刚刚已经列印出来的几十篇全部丢弃，
+    最后只给一句「未采集到任何文章」——这就是最主要的「空」来源。
+    """
     print(f"\n📰 采集公众号：{name}")
     fakeid, nickname = search_biz(session, token, name)
     print(f"   ✓ fakeid={fakeid}  昵称={nickname}")
@@ -379,59 +595,59 @@ def collect_account(session, token, name, since, count, fetch_content):
     pages = 0
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    while len(collected) < count and pages < MAX_LIST_PAGES:
-        data = api_get(session, token, "/cgi-bin/appmsg", {
-            "action": "list_ex", "begin": str(begin), "count": str(LIST_PAGE_SIZE),
-            "fakeid": fakeid, "type": "9", "query": "",
-        })
-        items = data.get("app_msg_list") or []
-        total = data.get("app_msg_cnt", 0)
-        if not items:
-            break
-
-        stop = False
-        for it in items:
-            date = unix_to_date(it.get("update_time"))
-            if date and since and date < since:
-                stop = True
-                continue
-            link = (it.get("link", "") or "").replace("\\/", "/")
-            title = decode_entities(it.get("title", ""))
-            collected.append({
-                "id": canonical_id(link, title),
-                "account": nickname,
-                "query": name,
-                "title": title,
-                "digest": decode_entities(it.get("digest", "")),
-                "link": link,
-                "cover": it.get("cover", ""),
-                "images": [],
-                "publishDate": date,
-                "content": "",
-                "collectedAt": now_str,
+    try:
+        while len(collected) < count and pages < MAX_LIST_PAGES:
+            data = api_get(session, token, "/cgi-bin/appmsg", {
+                "action": "list_ex", "begin": str(begin), "count": str(LIST_PAGE_SIZE),
+                "fakeid": fakeid, "type": "9", "query": "",
             })
-            print(f"   [{len(collected)}] {date}  {collected[-1]['title'][:36]}")
-            if len(collected) >= count:
+            items = data.get("app_msg_list") or []
+            total = _as_int(data.get("app_msg_cnt"))
+            if not items:
                 break
 
-        pages += 1
-        begin += LIST_PAGE_SIZE
-        if stop or (total and begin >= total):
-            break
+            stop = False
+            for it in items:
+                date = unix_to_date(it.get("update_time"))
+                if date and since and date < since:
+                    stop = True
+                    continue
+                link = (it.get("link", "") or "").replace("\\/", "/")
+                title = decode_entities(it.get("title", ""))
+                rec = {
+                    "id": canonical_id(link, title),
+                    "account": nickname,
+                    "query": name,
+                    "title": title,
+                    "digest": decode_entities(it.get("digest", "")),
+                    "link": link,
+                    "cover": it.get("cover", ""),
+                    "images": [],
+                    "publishDate": date,
+                    "content": "",
+                    "collectedAt": now_str,
+                }
+                collected.append(rec)
+                if sink is not None:
+                    sink.append(rec)
+                print(f"   [{len(collected)}] {date}  {title[:36]}")
+                if len(collected) >= count:
+                    break
+
+            pages += 1
+            begin += LIST_PAGE_SIZE
+            if stop or (total and begin >= total):
+                break
+    except (AuthError, FreqControlError):
+        # 列表中断也要把已拿到的这批正文补齐再抛，避免白跑一场。
+        # 文章页走的是公开 mp 页面，与后台接口的频控是两套系统，通常仍可用。
+        if fetch_content and collected:
+            print(f"   ⚠️ 列表中断，先把已采到的 {len(collected)} 篇正文抓完…")
+            fetch_contents(collected, label="（中断前补抓）")
+        raise
 
     if fetch_content and collected:
-        print(f"   ↓ 抓取正文（{len(collected)} 篇）…")
-        for i, rec in enumerate(collected, 1):
-            if not rec["link"]:
-                continue
-            res = fetch_article(rec["link"])
-            rec["content"] = res["content"]
-            rec["images"] = res["images"]
-            if not rec["cover"] and res.get("ogCover"):
-                rec["cover"] = res["ogCover"]
-            flag = (f"{len(res['content'])} 字 / {len(res['images'])} 图"
-                    if res["content"] else "未取到(可能图文/视频或风控)")
-            print(f"      {i}/{len(collected)} {flag}")
+        fetch_contents(collected)
 
     print(f"   ✓ {name} 共采集 {len(collected)} 篇")
     return collected
@@ -525,10 +741,21 @@ def ingest_to_kb(articles):
 # ════════════════════════════════════════════════════════════════
 
 def run_search(keyword, count, fetch_content, auto_ingest):
-    """按关键词搜索微信公众号文章（跨号），抓取正文并入库。"""
+    """按关键词搜索微信公众号文章（跳号），抓取正文并入库。
+
+    ⚠ 已用真实有效凭证验证：本命令依赖的
+    `/cgi-bin/operate_appmsg?action=search_article` 返回
+    **ret=200009, err_msg="not found"**，即该 action 并不存在。
+    微信公众平台后台未提供「全网文章搜索」能力，因此本命令**永远返回空**。
+    保留它只为向后兼容与错误可见，请改用 `collect <公众号名>`。
+    """
     print("=" * 64)
-    print("  墨摘 · 微信公众号文章搜索（关键词 → 跨号采集）")
+    print("  墨摘 · 微信公众号文章搜索（关键词 → 跳号采集）")
     print("=" * 64)
+    print("⚠️  该子命令已经真实凭证验证为**不可用**：微信后台的"
+          "search_article 接口返回 ret=200009 (not found)。")
+    print("    微信公众平台未提供「全网文章搜索」能力，本命令不会有结果。")
+    print("    → 请改用：python3 wechat_collector.py collect <公众号名>")
 
     token, cookie = load_credentials()
     if not token or not cookie:
@@ -557,6 +784,9 @@ def run_search(keyword, count, fetch_content, auto_ingest):
             break
         except ApiError as e:
             print(f"✗ {e}")
+            if "200009" in str(e):
+                print("  → ret=200009 (not found) 即「该 action 不存在」，不是网络或频控问题，"
+                      "重试也不会有结果。请改用 collect <公众号名>。")
             break
 
         items = data.get("article_list") or data.get("app_msg_list") or []
@@ -564,7 +794,20 @@ def run_search(keyword, count, fetch_content, auto_ingest):
             # try alternate response key
             items = (data.get("results") or {}).get("list") or []
         if not items:
-            print("   (无更多结果)")
+            # 这三个键名都是猜的，接口的 action 与响应结构从未被验证过。
+            # 与其静默打一句「无更多结果」把问题藏起来，不如把真实响应摊开，
+            # 让使用者/维护者一眼看出到底是「真没结果」还是「字段名不对」。
+            if begin == 0:
+                print("   ⚠️  未能从响应中解析出文章列表。")
+                print(f"      响应顶层键名：{sorted(data.keys())}")
+                sample = {k: v for k, v in data.items() if k != "base_resp"}
+                dump = json.dumps(sample, ensure_ascii=False)[:600]
+                print(f"      响应样本（截断）：{dump}")
+                print("      说明：search 走的 operate_appmsg?action=search_article 属未验证接口，"
+                      "微信后台并未公开「全网文章搜索」能力，此路径可能本就不可用。")
+                print("      可靠替代：先用 collect <公众号名> 按号采集。")
+            else:
+                print("   (无更多结果)")
             break
 
         for it in items:
@@ -600,18 +843,7 @@ def run_search(keyword, count, fetch_content, auto_ingest):
 
     # fetch full content
     if fetch_content and collected:
-        print(f"\n   ↓ 抓取正文（{len(collected)} 篇）…")
-        for i, rec in enumerate(collected, 1):
-            if not rec["link"]:
-                continue
-            res = fetch_article(rec["link"])
-            rec["content"] = res["content"]
-            rec["images"] = res["images"]
-            if not rec["cover"] and res.get("ogCover"):
-                rec["cover"] = res["ogCover"]
-            flag = (f"{len(res['content'])} 字 / {len(res['images'])} 图"
-                    if res["content"] else "未取到")
-            print(f"      {i}/{len(collected)} {flag}")
+        fetch_contents(collected)
 
     # save
     json_path = save_json(collected, [keyword], "")
@@ -631,6 +863,22 @@ def run_search(keyword, count, fetch_content, auto_ingest):
 # ════════════════════════════════════════════════════════════════
 #  子命令：collect / read / whoami
 # ════════════════════════════════════════════════════════════════
+
+def print_fallback_hint(accounts=None):
+    """collect（C/appmsg）拿不到数据时的引导：重申 C 为首选，把 A 作为需确认的备选。
+
+    不自动切到 A：appmsg 是最直接最准确的路径（按真实文章列表拉），
+    而 collect-urls 的完整性只取决于所给来源，可能漏文章/串同名号，需用户拍板才用。
+    """
+    print("\n── 采集路径优先级 ─────────────────────────────────")
+    print("  首选（默认）：collect（appmsg 后台接口）——最直接、最准确，按公众号真实文章列表拉全文。")
+    print("  当前是被微信频控挡住（不是数据没了）。建议做法按序：")
+    print("    1) 等冷却 / 换个时段重跑 collect（重跑会自动去重续采）——优先试这个；")
+    print("    2) 实在持续拿不到，且你手头有该号的文章 URL / RSS 源时，再【经你确认】改用备选：")
+    print("         python3 wechat_collector.py collect-urls <URL / 文件 / RSS 源>")
+    print("  ⚠ 备选路径（collect-urls）的文章完整性只取决于你给的来源，可能漏文章、甚至串到同名号，")
+    print("    不如 collect 权威——所以默认不会自动切过去，由你决定。")
+
 
 def run_collect(accounts, since, count, fetch_content, auto_ingest):
     print("=" * 64)
@@ -654,7 +902,11 @@ def run_collect(accounts, since, count, fetch_content, auto_ingest):
 
     for name in accounts:
         try:
-            all_articles.extend(collect_account(session, token, name, since, count, fetch_content))
+            # sink=all_articles：采到一篇就落入 all_articles，不再靠返回值。
+            # 一旦抛频控/凭证异常，.extend() 是执行不到的，那就会把
+            # 屏幕上已经列印出来的文章全部丢掉——这是之前「空」的根因。
+            collect_account(session, token, name, since, count, fetch_content,
+                            sink=all_articles)
         except AuthError as e:
             print(f"\n❌ 凭证问题：{e}")
             print_credential_guide()
@@ -662,7 +914,6 @@ def run_collect(accounts, since, count, fetch_content, auto_ingest):
             break
         except FreqControlError as e:
             print(f"\n⏸  {e}")
-            print("   已保存已采集进度，可稍后重跑（建议减小 --count 或增大延时）。")
             interrupted = True
             break
         except ApiError as e:
@@ -671,6 +922,9 @@ def run_collect(accounts, since, count, fetch_content, auto_ingest):
 
     if not all_articles:
         print("\n未采集到任何文章。请检查公众号名称、凭证有效性或日期阈值。")
+        if interrupted:
+            # 一篇都没拿到且是被频控中断：把首选 C / 备选 A（需确认）的处置说清楚。
+            print_fallback_hint(accounts)
         return 1
 
     json_path = save_json(all_articles, accounts, since, partial=interrupted)
@@ -681,6 +935,11 @@ def run_collect(accounts, since, count, fetch_content, auto_ingest):
     print(f"   JSON ：{json_path}")
     if xlsx_path:
         print(f"   Excel：{xlsx_path}")
+    # “已保存进度”只能在真的写出文件之后再说，以前在 except 里先嗦一句，
+    # 结果往往一个文件都没落盘。
+    if interrupted:
+        print(f"   ↳ 中断前的 {len(all_articles)} 篇已落盘（文件名带 _partial），可稍后重跑补全；"
+              "重跑会自动去重，不会重复入库。")
     if auto_ingest:
         ingest_to_kb(all_articles)
     print("\n下一步：`python3 kb.py stats` 看进度；`python3 kb.py list --unanalyzed --json`")
@@ -690,13 +949,29 @@ def run_collect(accounts, since, count, fetch_content, auto_ingest):
 
 
 def resolve_sogou_link(url):
-    """尽力把搜狗跳转链接解析为 mp.weixin.qq.com 原文（best-effort）。"""
+    """尽力把搜狗跳转链接解析为 mp.weixin.qq.com 原文（best-effort）。
+
+    搜狗的 /link 跳转必须带上搜索页下发的 SNUID cookie，否则只会拿到一个
+    空跳板页（实测 3/3 全部失败）。而且实测发现搜狗**首页只下发 SUID/ABTEST，
+    只有搜索页才下发 SNUID**，所以这里用 Session 先请求一次搜索页热身。
+    """
+    s = requests.Session()
+    s.headers.update({"User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9"})
+    warm = "https://weixin.sogou.com/weixin?type=2&query=%E5%BE%AE%E4%BF%A1"
     try:
-        r = requests.get(url, headers={"User-Agent": UA, "Referer": "https://weixin.sogou.com/"},
-                         timeout=20, allow_redirects=True)
+        s.get(warm, timeout=20)
+    except requests.RequestException:
+        pass
+    try:
+        r = s.get(url, headers={"Referer": warm}, timeout=20, allow_redirects=True)
         if "mp.weixin.qq.com" in r.url:
             return r.url
         html = r.text or ""
+        # 搜狗自己也有反爬：跳到 /antispider/ 时要说清楚，别让用户以为是链接问题。
+        if "antispider" in r.url or "antispider" in html:
+            print("⚠️  搜狗已对当前 IP 启用反爬验证（/antispider），无法解析跳转链接。")
+            print("    → 请换用 mp.weixin.qq.com 原文链接，或稍后再试。")
+            return url
         parts = re.findall(r"url\s*\+=\s*'([^']*)'", html)
         if parts:
             u = "".join(parts).replace("@", "").replace("&amp;", "&")
@@ -710,59 +985,196 @@ def resolve_sogou_link(url):
     return url
 
 
-def run_read(url, out=None):
-    """单篇全文抓取（粘链场景），输出 JSON（形态对齐 web /api/article）。"""
+def read_article(url, _depth=0):
+    """单篇全文拓取的可复用核心，返回 (rec_or_None, status)。
+
+    走公开 mp.weixin.qq.com/s 页，与 appmsg 后台接口是**两套限流**——这正是
+    appmsg 被频控锁死时的主力备选路径：列表从别处拿（RSS/搜索/手动），正文靠它。
+    run_read / run_collect_urls 共用本函数。
+    """
     if not re.match(r"^https?://", url):
-        print("✗ url 格式不正确（应以 http(s):// 开头）。")
-        return 1
+        return None, "invalid"
     if "weixin.sogou.com/link" in url:
         url = resolve_sogou_link(url)
 
     headers = {"User-Agent": UA, "Accept": "text/html,*/*", "Referer": MP_BASE + "/"}
     try:
         r = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
-    except requests.RequestException as e:
-        print(f"✗ 抓取失败：{e}")
-        return 1
+    except requests.RequestException:
+        return None, "neterror"
     html = r.text or ""
     final_url = r.url or url
-    if is_blocked_page(html):
-        print("✗ 目标页触发验证（链接可能过期或被风控）。请改用浏览器打开后粘贴正文。")
-        return 1
+
+    content_html = slice_content_html(html)
+    content = html_to_text(content_html) if content_html else ""
+    status = classify_page(html, content, final_url)
+
+    # 分享卡片页：正文在「阅读全文」指向的原文，跟进一次（限深防环）。
+    if status == "share" and _depth == 0:
+        src = share_source_url(html)
+        if src:
+            return read_article(src, _depth=1)
+    if status != "ok":
+        return None, status
 
     title = (pick(html, r'<h1[^>]*class="rich_media_title"[^>]*>([\s\S]*?)</h1>')
              or pick(html, r'<meta property="og:title" content="([^"]*)"')
              or pick(html, r'<title>([\s\S]*?)</title>'))
-    account = (pick(html, r'<a[^>]*id="js_name"[^>]*>([\s\S]*?)</a>')
-               or pick(html, r'var nickname\s*=\s*"([^"]*)"')
+    account = (pick(html, r'var nickname\s*=\s*"([^"]*)"')
+               or pick(html, r'<a[^>]*id="js_name"[^>]*>([\s\S]*?)</a>')
                or pick(html, r'<meta property="og:article:author" content="([^"]*)"'))
     publish = (pick(html, r'<em[^>]*id="publish_time"[^>]*>([\s\S]*?)</em>')
                or pick(html, r'var ct\s*=\s*"(\d+)"'))
     if re.fullmatch(r"\d{10}", publish or ""):
         publish = unix_to_date(publish)
-    content_html = slice_content_html(html)
-    content = html_to_text(content_html) if content_html else ""
-    images = extract_images(content_html)
-    cover = pick(html, r'<meta property="og:image" content="([^"]*)"')
-
-    if not content or len(content) < 20:
-        print("✗ 未解析到正文（可能是图文/视频类推送或页面结构特殊）。请粘贴正文。")
-        return 1
-
+    # 用 biz+mid+idx 还原永久链接（避免搜狗 src=11 临时链重复入库）。
+    perm = permanent_link(html, final_url)
     rec = {
-        "id": canonical_id(final_url, title),
+        "id": canonical_id(perm, title),
         "account": account, "query": "", "title": title,
         "digest": pick(html, r'<meta property="og:description" content="([^"]*)"'),
-        "link": final_url, "cover": cover, "images": images,
-        "publishDate": publish, "content": content,
+        "link": perm, "cover": pick(html, r'<meta property="og:image" content="([^"]*)"'),
+        "images": extract_images(content_html),
+        "publishDate": publish, "content": content, "contentStatus": "ok",
         "collectedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+    return rec, "ok"
+
+
+def run_read(url, out=None):
+    """单篇全文抓取（粘链场景），输出 JSON（形态对齐 web /api/article）。"""
+    if not re.match(r"^https?://", url):
+        print("✗ url 格式不正确（应以 http(s):// 开头）。")
+        return 1
+    rec, status = read_article(url)
+    if status != "ok":
+        print(f"✗ 未取到正文：{STATUS_LABEL.get(status, status)}")
+        if status == "blocked":
+            print("  → 请隔一段时间再试，或改用浏览器打开后粘贴正文。")
+        elif status == "invalid":
+            print("  → 该链接已失效（搜狗的 src=11 链接寿命很短），请重新获取链接。")
+        elif status == "gone":
+            print("  → 文章已被删除或下架，无法恢复。")
+        return 1
     if out:
         with open(out, "w", encoding="utf-8") as f:
             json.dump(rec, f, ensure_ascii=False, indent=2)
-        print(f"✓ 已写入 {out}（{len(content)} 字 / {len(images)} 图）。")
+        print(f"✓ 已写入 {out}（{len(rec['content'])} 字 / {len(rec['images'])} 图）。")
     else:
         print(json.dumps(rec, ensure_ascii=False, indent=2))
+    return 0
+
+
+# ═══════════════════════════════════════════════════════════
+#  子命令：collect-urls（appmsg 被频控时的备选路径：URL/文件/RSS → 逐篇 read）
+# ═══════════════════════════════════════════════════════════
+
+def _extract_mp_links(text):
+    """从任意文本/RSS/Atom 中抽出 mp.weixin.qq.com 文章链接（保序去重）。"""
+    text = (text or "").replace("&amp;", "&")
+    urls, seen = [], set()
+    for m in re.finditer(r"https?://mp\.weixin\.qq\.com/s[^\s\"'<>\\)\]]+", text):
+        u = m.group(0).rstrip(".,;")
+        if u not in seen:
+            seen.add(u)
+            urls.append(u)
+    return urls
+
+
+def load_urls(source):
+    """把一个来源解析成 URL 列表。source 可以是：
+      - 本地文件：.txt（每行一个，# 开头为注释）/ .json（数组或 {articles:[{link}]}）/ .opml/.xml
+      - RSS/Atom 订阅链接（http…）→ 拉取并抽出其中的 mp 链接
+      - 直接就是一个 mp 文章链接
+    """
+    # RSS/Atom 或单个网址
+    if re.match(r"^https?://", source):
+        if "mp.weixin.qq.com/s" in source:
+            return [source]
+        try:
+            r = requests.get(source, headers={"User-Agent": UA}, timeout=25)
+            links = _extract_mp_links(r.text)
+            print(f"   ↓ 从订阅源解析出 {len(links)} 个公众号文章链接。")
+            return links
+        except requests.RequestException as e:
+            print(f"✗ 拉取订阅源失败：{e}")
+            return []
+    # 本地文件
+    if os.path.exists(source):
+        raw = open(source, "r", encoding="utf-8").read()
+        if source.endswith(".json"):
+            try:
+                data = json.loads(raw)
+                items = data.get("articles") if isinstance(data, dict) else data
+                out = []
+                for it in items or []:
+                    u = it.get("link") or it.get("url") if isinstance(it, dict) else it
+                    if u:
+                        out.append(u)
+                return out
+            except (ValueError, AttributeError):
+                pass
+        # .txt / .opml / .xml / 其它：先按行取，再兵底正则抽 mp 链接
+        lines = [ln.strip() for ln in raw.splitlines()
+                 if ln.strip() and not ln.strip().startswith("#")]
+        if lines and all(re.match(r"^https?://", ln) for ln in lines):
+            return lines
+        return _extract_mp_links(raw)
+    print(f"✗ 来源无法识别（既不是 http(s) 链接也不是存在的文件）：{source}")
+    return []
+
+
+def run_collect_urls(sources, auto_ingest):
+    """备选采集：从 URL / 文件 / RSS 拿到一批链接，逐篇走 read 拓全文。
+
+    这条路**不碰 appmsg**，所以 appmsg 被频控锁死的当天依然能用。
+    """
+    print("=" * 64)
+    print("  墨摘 · 备选采集（URL/文件/RSS → 逐篇全文，不经 appmsg）")
+    print("=" * 64)
+    print("ℹ️  这是**备选**路径：首选仍是 collect（appmsg，最准确），仅在它被频控拿不到时才用这条。")
+    print("    本路径的文章完整性只取决于你给的来源（可能漏文章/串同名号），请知悉。")
+
+    urls = []
+    for src in sources:
+        for u in load_urls(src):
+            if u not in urls:
+                urls.append(u)
+    if not urls:
+        print("✗ 没有拿到任何文章链接。")
+        return 1
+    print(f"\n📎 共 {len(urls)} 个链接，开始逐篇拓全文…")
+
+    collected, reasons = [], {}
+    for i, u in enumerate(urls, 1):
+        rec, status = read_article(u)
+        if status == "ok" and rec:
+            collected.append(rec)
+            print(f"   [{len(collected)}] {rec['account']} · {rec['publishDate']} · "
+                  f"{len(rec['content'])}字/{len(rec['images'])}图  {rec['title'][:30]}")
+        else:
+            reasons[status] = reasons.get(status, 0) + 1
+            print(f"   [✗] {STATUS_LABEL.get(status, status)}  <- …{u[-22:]}")
+        polite_sleep(CONTENT_DELAY_MIN, CONTENT_DELAY_MAX)
+
+    n = len(urls)
+    print(f"\n   ↳ 成功 {len(collected)}/{n}（空率 {(n - len(collected)) / n * 100:.0f}%）")
+    for st, c in sorted(reasons.items(), key=lambda kv: -kv[1]):
+        print(f"      · {STATUS_LABEL.get(st, st)} × {c}")
+    if not collected:
+        return 1
+
+    accounts = sorted({r["account"] for r in collected if r["account"]})
+    json_path = save_json(collected, accounts, "")
+    xlsx_path = save_excel(collected)
+    print("\n" + "=" * 64)
+    print(f"✅ 完成：共 {len(collected)} 篇")
+    print(f"   JSON ：{json_path}")
+    if xlsx_path:
+        print(f"   Excel：{xlsx_path}")
+    if auto_ingest:
+        ingest_to_kb(collected)
+    print("=" * 64)
     return 0
 
 
@@ -808,31 +1220,59 @@ def build_parser():
     sp.add_argument("--count", type=int, default=TARGET_COUNT, help="每号目标篇数")
     sp.add_argument("--no-content", action="store_true", help="只采列表元数据，不抓正文")
     sp.add_argument("--no-kb", action="store_true", help="不自动入知识库")
+    _add_freq_args(sp)
 
     sp = sub.add_parser("read", help="抓取单篇文章全文（粘链场景）")
     sp.add_argument("url")
     sp.add_argument("--out", help="写入 JSON 文件路径（默认打印到 stdout）")
 
+    sp = sub.add_parser("collect-urls",
+                        help="备选采集：从 URL/文件/RSS 批量拓全文（appmsg 被频控时用）")
+    sp.add_argument("sources", nargs="+",
+                    help="mp 文章链接 / 本地文件(.txt/.json/.opml) / RSS或Atom订阅链接（可混合多个）")
+    sp.add_argument("--no-kb", action="store_true", help="不自动入知识库")
+
     sub.add_parser("whoami", help="校验 token/cookie 是否有效")
 
-    sp = sub.add_parser("search", help="按关键词搜索全网公众号文章（跨号采集）")
+    sp = sub.add_parser("search", help="按关键词搜索全网公众号文章（⚠ 接口未经验证）")
     sp.add_argument("keyword", help="搜索关键词")
     sp.add_argument("--count", type=int, default=10, help="目标篇数")
     sp.add_argument("--no-content", action="store_true", help="只采列表元数据，不抓正文")
     sp.add_argument("--no-kb", action="store_true", help="不自动入知识库")
+    _add_freq_args(sp)
 
     return p
+
+
+def _add_freq_args(sp):
+    """频控节奏参数：不同账号/IP 的频控尺度差很多，开放给用户自调。"""
+    sp.add_argument("--freq-cooldown", type=int, default=FREQ_COOLDOWN,
+                    help=f"命中频控(ret=200013)后的首次冷却秒数（默认 {FREQ_COOLDOWN}，逐次翻倍）")
+    sp.add_argument("--freq-retries", type=int, default=MAX_FREQ_RETRIES,
+                    help=f"频控重试次数（默认 {MAX_FREQ_RETRIES}；设 0 则一撞频控就落盘退出）")
+
+
+def _apply_freq_args(args):
+    """把 CLI 传的频控参数写回模块级常量。"""
+    global FREQ_COOLDOWN, MAX_FREQ_RETRIES
+    if getattr(args, "freq_cooldown", None) is not None:
+        FREQ_COOLDOWN = max(0, args.freq_cooldown)
+    if getattr(args, "freq_retries", None) is not None:
+        MAX_FREQ_RETRIES = max(0, args.freq_retries)
 
 
 def main():
     parser = build_parser()
     args = parser.parse_args()
+    _apply_freq_args(args)
 
     if args.cmd == "collect":
         return run_collect(args.accounts, args.since.strip(), args.count,
                            not args.no_content, not args.no_kb)
     if args.cmd == "read":
         return run_read(args.url, args.out)
+    if args.cmd == "collect-urls":
+        return run_collect_urls(args.sources, not args.no_kb)
     if args.cmd == "whoami":
         return run_whoami()
     if args.cmd == "search":

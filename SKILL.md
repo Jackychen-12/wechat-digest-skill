@@ -1,7 +1,7 @@
 ---
 name: wechat-digest
-description: 微信公众号情报采集 + 知识库 + 结构性分析助手。以「微信公众平台后台」的 Cookie+Token 接口为核心（searchbiz+appmsg），按公众号名称稳定拉取文章列表与全文，或按关键词跨号搜索全网文章（operate_appmsg search_article），落盘 JSON + Excel 并持续累积进本地知识库（knowledge_base.json）；由本地 agent 做逐篇五段式精析（一句话总结/核心观点/关键数据/关键词标签/适用人群）+ 知识库结构化（主题聚类/标签倒排/交叉引用）+ 收藏夹拆解；再生成一个自包含、可双击打开的离线 HTML 工作台（总览/文章库/知识库/收藏夹），并预留 /api/chat 接口做按需 AI 拆解。当用户需要：(1) 抓取/采集某公众号的历史文章全文；(2) 按关键词搜索全网公众号文章；(3) 监测竞品或标杆公众号内容动向；(4) 把一批公众号文章建成知识库并做结构化分析/收藏夹拆解；(5) 把分析结果做成离线 HTML 呈现；(6) 解决公众号信息爬取/反爬问题时使用。触发词：公众号抓取、公众号采集、公众号爬取、公众号全文、公众号文章分析、公众号知识库、收藏夹拆解、重点内容解析报告、离线 HTML 报告、关键词搜索公众号、按主题搜文章、wechat digest。
-version: 0.3.0
+description: 微信公众号情报采集 + 知识库 + 结构性分析助手。以「微信公众平台后台」的 Cookie+Token 接口为核心（searchbiz+appmsg），按公众号名称稳定拉取文章列表与全文（注：search 关键词搜索已验证不可用，search_article 返回 ret=200009 not found），落盘 JSON + Excel 并持续累积进本地知识库（knowledge_base.json）；采集内置频控退避、风控验证页识别与「中断也保住进度」；由本地 agent 做逐篇五段式精析（一句话总结/核心观点/关键数据/关键词标签/适用人群）+ 知识库结构化（主题聚类/标签倒排/交叉引用）+ 收藏夹拆解；再生成一个自包含、可双击打开的离线 HTML 工作台（总览/文章库/知识库/收藏夹），并预留 /api/chat 接口做按需 AI 拆解。当用户需要：(1) 抓取/采集某公众号的历史文章全文；(2) 监测竞品或标杆公众号内容动向；(3) 把一批公众号文章建成知识库并做结构化分析/收藏夹拆解；(4) 把分析结果做成离线 HTML 呈现；(5) 解决公众号信息爬取/反爬/频控/采集空结果问题时使用。触发词：公众号抓取、公众号采集、公众号爬取、公众号全文、公众号文章分析、公众号知识库、收藏夹拆解、重点内容解析报告、离线 HTML 报告、wechat digest。
+version: 0.4.0
 name_zh: 微信公众号采集 · 知识库 · 离线 HTML 工作台
 ---
 
@@ -9,7 +9,8 @@ name_zh: 微信公众号采集 · 知识库 · 离线 HTML 工作台
 
 对标 redbook（rednote）skill，但面向**微信公众号**。三件事，职责分明：
 
-1. **采集（P0，脚本）**：以微信公众平台后台 `searchbiz`+`appmsg` 接口，按名称稳定拉**全文**；亦可按关键词跨号搜索全网文章（`search_article`）。
+1. **采集（P0，脚本）**：以微信公众平台后台 `searchbiz`+`appmsg` 接口，按名称稳定拉**全文**。
+   （`search` 关键词搜索已经真实凭证验证为**不可用**：`search_article` 返回 `ret=200009 not found`。）
 2. **知识库（脚本 + 本地 agent）**：把每次采集**去重合并**进一个持续累积的 `knowledge_base.json`；
    由本地 agent 做逐篇五段式精析 + 主题/标签/交叉引用结构化（**不调外部大模型 API**）。
 3. **呈现（脚本 + 浏览器）**：生成**自包含离线 HTML 工作台**，可建**收藏夹**、看**知识库**、读**逐篇/收藏夹拆解**；
@@ -73,6 +74,10 @@ python3 wechat_collector.py whoami             # 校验登录态是否有效
 
 ## ① 采集（P0 · 全文挖掘）—— `wechat_collector.py`
 
+> **采集路径优先级**：`collect`（appmsg 后台接口）是**默认首选**——最直接、最准确，
+> 按公众号真实文章列表拉全文。`collect-urls`（URL/RSS）是**备选**，仅当 `collect` 被频控
+> 持续拿不到、且**经用户确认**时才用（它的完整性只取决于所给来源，不如 appmsg 权威）。
+
 ```bash
 # 按名称采集（默认抓正文 + 自动入知识库）
 python3 wechat_collector.py collect 晚点LatePost --since 2025-01-01 --count 10
@@ -82,6 +87,12 @@ python3 wechat_collector.py collect 某号 --no-kb                        # 只�
 
 # 单篇全文抓取（粘链场景，输出 JSON；支持 mp 链接，尽力解析搜狗跳转链接）
 python3 wechat_collector.py read "https://mp.weixin.qq.com/s/xxxx" --out output/one.json
+
+# ★ 备选采集（appmsg 被频控锁死时用）：从 URL / 文件 / RSS 批量拓全文，不经 appmsg
+python3 wechat_collector.py collect-urls urls.txt                       # 文件：每行一个 mp 链接（# 注释）
+python3 wechat_collector.py collect-urls "https://mp.weixin.qq.com/s/aaa" "https://mp.weixin.qq.com/s/bbb"
+python3 wechat_collector.py collect-urls https://rsshub.app/wechat/xxx  # RSS/Atom 订阅源→自动抽 mp 链接
+python3 wechat_collector.py collect-urls articles.json --no-kb         # 也吃既有 articles_*.json
 
 # 校验凭证
 python3 wechat_collector.py whoami
@@ -96,17 +107,35 @@ python3 wechat_collector.py
 ```
 
 **`collect` 选项**：`--since YYYY-MM-DD`（仅采此日期后；传 `--since ""` 不限）、`--count N`（每号目标篇数）、
-`--no-content`、`--no-kb`。
+`--no-content`、`--no-kb`、`--freq-cooldown`、`--freq-retries`。
+
+**`collect-urls`（备选采集，仅在 appmsg 被锁且经确认后用）**：`sources`（一或多个，可混合）+ `--no-kb`。
+它走单篇公开页（与 appmsg **两套限流**），所以 `collect`（appmsg）被 `ret=200013` 锁住的当天依然能拿到全文。
+sources 可以是：mp 文章链接、本地文件（`.txt` 每行一个 / `.json` 数组或 `articles_*.json` / `.opml`）、
+或 RSS/Atom 订阅链接（自动抽出其中的 mp 链接）。产物与 `collect` 一致（`articles_*.json` + Excel + 自动入库）。
+> ⚠ **它是备选、不是首选**：`collect`（appmsg）按公众号真实历史拉，最完整最准确；而 `collect-urls`
+> 的完整性只取决于你能凑到的 URL（可能漏文章，甚至串到同名号）。所以它**不会被自动触发**——
+> 仅当 `collect` 持续被频控拿不到、且由你确认并提供来源时才走它。
 
 **`search` 选项**：`keyword`（位置参数，搜索关键词）、`--count N`（目标篇数，默认 10）、
 `--no-content`（只采列表元数据）、`--no-kb`（不自动入知识库）。
-调用微信后台 `operate_appmsg?action=search_article` 接口，跨公众号搜索全网文章。
+
+> 🚫 **`search` 已经真实凭证验证为不可用，不要再用。** 它调的
+> `operate_appmsg?action=search_article` 在登录态有效时返回 **`ret=200009, err_msg="not found"`**
+> ——即该 action 并不存在。微信公众平台后台**未提供「全网文章搜索」能力**，
+> 所以这个子命令**永远返回空**，不是频控也不是网络问题，重试无意义。
+> 命令仍保留（向后兼容）但会在开头直接警告。**请一律改用 `collect <公众号名>`。**
 
 **产物**：`output/articles_YYYYMMDD.json`（含正文，**供分析**）+ `index_YYYYMMDD.xlsx`（索引表）。
 采集成功后默认自动 `kb ingest` 入库。中断（频控/凭证失效）时生成 `*_partial.json/.xlsx` 保留进度。
 
-**抓取加固**：随机延时 + 指数退避；频控（`ret=200013`）自动冷却重试；凭证失效（`ret=200003` / 被踢回登录页）
-明确提示重登；正文取不到时退回 `og:description`；记录封面 `cover` 与正文内**图片 URL 列表** `images`。
+**抓取加固**：
+- 随机延时 + 指数退避；频控（`ret=200013`）自动冷却重试，默认首次 **300s 且逐次翻倍**
+  （微信实际冷却是几十分钟级，可用 `--freq-cooldown` / `--freq-retries` 自调）。
+- **中断一定保住进度**：已采到的文章边采边落入结果集，频控/凭证失效时先把这批正文补完
+  再退出并写 `*_partial` 文件（退出码 130）。重跑按 `sn=` 去重，不会重复入库。
+- 正文取不到时退回 `og:description`（会标记为 `digest` 状态）；记录封面 `cover` 与正文内**图片 URL 列表** `images`。
+- **空因可观测**：每批抓完会汇报「正文成功 N/M、空率 X%」与空因分布（见下表）。
 
 ---
 
@@ -231,6 +260,27 @@ python3 kb.py export-html        # 或：python3 render_html.py → 生成 outpu
 | `publishDate` / `content` | 发布日期 / 清洗后正文纯文本 |
 | `collectedAt` | 采集时间戳 |
 | `analysis` / `topicIds` / `crossRefs` | agent 写回的五段式分析 / 主题 / 交叉引用 |
+| `contentStatus` | 正文抓取结果状态（见下表）——只在 `articles_*.json`/Excel 里，不入知识库 |
+
+### `contentStatus`：「空」到底是为什么
+
+以前风控页、失效链接、已删文章、真的没正文——四种情况都被压成同一个空串，
+“空了但没人知道为什么”。现在逐篇标出原因：
+
+| 状态 | 含义 | 能不能重试 |
+|------|------|-----------|
+| `ok` | 正常取到正文 | — |
+| `digest` | 正文未取到，已用 `og:description` 兜底 | 可重试 |
+| `empty` | 页面结构正常但确实无正文（纯图片/视频推送） | 重试无用 |
+| `share` | 「分享一篇文章」卡片页，未能跟到原文 | 可重试 |
+| `blocked` | **被微信验证页拦截** | 降速/换 IP 后重采 |
+| `gone` | 已删除 / 违规下架 | 不可恢复 |
+| `invalid` | 链接失效或参数错误 | 需重新获取链接 |
+
+> 关于 `blocked`：微信真正的反爬页是 301/302 重定向到
+> `/mp/wappoc_appmsgcaptcha?poc_token=...`，它的 `<title>` 是空的、正文区没有任何中文提示词，
+> **只看 HTML 内容根本识别不了**，必须看最终 URL。这是以前大量「静默空正文」的根因。
+> 命中 `blocked` 时请隔一段时间对同一批重跑，`kb ingest` 会自动用更长的正文补全。
 
 > **互动量说明**：阅读数 / 在看 / 点赞需要微信客户端的签名参数，后台接口**拿不到**，故**不包含**。
 > 本技能提供标题/摘要/正文/时间/图片等**内容数据**。如需互动量，需走移动端抓包方案（不在本技能范围）。
@@ -240,10 +290,13 @@ python3 kb.py export-html        # 或：python3 render_html.py → 生成 outpu
 ## 常见问题与排错
 
 - **未检测到有效 token/cookie**：确认已填 `credentials.json`（非占位符）；token 是 URL 里 `token=` 后纯数字，cookie 是 Request Headers 里**整条**。先跑 `whoami`。
-- **凭证失效 / 接口未返回 JSON（ret=200003）**：token/cookie 过期了（很常见）。重新登录获取。
-- **命中频控（ret=200013）**：脚本会自动冷却重试；仍失败会保存进度。缓解：减小 `--count`、减少账号数、隔几十分钟再跑。
+- **凭证失效 / 接口未返回 JSON（ret=200003）**：token/cookie 过期了（很常见）。重新登录获取。注意：**此时已采到的文章依旧会写入 `*_partial` 文件**，不会白跑。
+- **命中频控（ret=200013）**：脚本会自动冷却重试（默认 300s 逐次翻倍）；仍失败会**把已采进度落盘后**退出（退出码 130）。微信实际冷却常在几十分钟以上，别暗重试；缓解：减小 `--count`、减少账号数、调大 `--freq-cooldown`。
 - **搜不到 / 选错号**：用更精确全称；脚本对多结果会打印候选与已选（含 `fakeid`）。
-- **部分文章「正文未取到」**：图文/视频类推送或个别风控页无法解析正文，属正常；分析时以 `digest` 为准并标注。
+- **部分文章「正文未取到」**：看每批末尾汇报的**空因分布**对照上表。`empty`/`gone` 属正常（分析时以 `digest` 为准并标注）；若大量 `blocked` 则是被风控，**应降速后重跑而不是当作没正文**。
+- **`search` 总是空**：这不是 bug 也不是频控——已用真实凭证验证 `search_article` 返回 `ret=200009 not found`，该接口不存在，微信后台没有全网文章搜索能力。**请改用 `collect <公众号名>`。**
+- **`searchbiz` 能搜到号、但 `appmsg` 一上来就 200013**：这是最常见的「用不了」形态。两个接口的频控额度是分开的：搜公众号很宽松，而「拉别人的文章列表」卡得很紧。一旦命中只能等（常见几十分钟到数小时，甚至当日额度用完），换 IP 或换 token 都不一定管用。建议：小 `--count`、一次只采 1 个号、两次采集之间隔开一段时间。
+- **搜狗链接解析失败**：若提示搜狗 `/antispider`，是搜狗对当前 IP 启用了验证，换用 mp 原文链接或稍后再试。
 - **digest.html 打开是空的**：先 `kb.py stats` 确认库里有文章；再 `kb.py export-html` 重新生成。断网时字体降级为系统字体，数据照常显示。
 
 ---
