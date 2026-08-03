@@ -50,6 +50,8 @@ AUTO_INGEST = True                     # 采完是否自动入知识库
 
 # 输出目录
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+# 断点续采的游标状态（--resume 时读写；已随 output/ 一同 .gitignore）
+COLLECT_STATE_FILE = os.path.join(OUTPUT_DIR, "collect_state.json")
 
 # ── 反爬节流参数（频控很敏感，宁慢勿快）──
 REQUEST_DELAY_MIN = 3.0
@@ -578,20 +580,25 @@ def fetch_contents(records, label=""):
     return okc
 
 
-def collect_account(session, token, name, since, count, fetch_content, sink=None):
+def collect_account(session, token, name, since, count, fetch_content, sink=None, resume=False):
     """采集单个公众号，返回文章记录列表。
 
     sink 若传入，则每采到一条就立即 append 进去。这是为了避开一个很痛的坑：
     以前频控/凭证失效是直接从函数里抛异常，调用方的 `all.extend(collect_account(...))`
     根本执行不到，于是屏幕上刚刚已经列印出来的几十篇全部丢弃，
     最后只给一句「未采集到任何文章」——这就是最主要的「空」来源。
+
+    resume=True 时做**断点续采**：从上次存的 begin 游标接着翻，不重复请求已拉过的页——
+    因为每翻一页 = 一次珍贵的 appmsg 请求，重复拉旧页等于白烧配额。
     """
     print(f"\n📰 采集公众号：{name}")
     fakeid, nickname = search_biz(session, token, name)
     print(f"   ✓ fakeid={fakeid}  昵称={nickname}")
 
     collected = []
-    begin = 0
+    begin = load_collect_state(fakeid) if resume else 0
+    if resume and begin:
+        print(f"   ↻ 断点续采：从 begin={begin} 继续（跳过已拉位置，不重复花 appmsg 配额）")
     pages = 0
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -636,11 +643,16 @@ def collect_account(session, token, name, since, count, fetch_content, sink=None
 
             pages += 1
             begin += LIST_PAGE_SIZE
+            if resume:
+                save_collect_state(fakeid, begin, nickname, since)
             if stop or (total and begin >= total):
                 break
     except (AuthError, FreqControlError):
         # 列表中断也要把已拿到的这批正文补齐再抛，避免白跑一场。
         # 文章页走的是公开 mp 页面，与后台接口的频控是两套系统，通常仍可用。
+        if resume:
+            # 保住游标：begin 此刻指向未拿到的那页，下次 --resume 从这里重试。
+            save_collect_state(fakeid, begin, nickname, since)
         if fetch_content and collected:
             print(f"   ⚠️ 列表中断，先把已采到的 {len(collected)} 篇正文抓完…")
             fetch_contents(collected, label="（中断前补抓）")
@@ -649,13 +661,44 @@ def collect_account(session, token, name, since, count, fetch_content, sink=None
     if fetch_content and collected:
         fetch_contents(collected)
 
-    print(f"   ✓ {name} 共采集 {len(collected)} 篇")
+    print(f"   ✓ {name} 共采集 {len(collected)} 篇"
+          + (f"（游标 begin={begin}）" if resume else ""))
     return collected
 
 
 # ════════════════════════════════════════════════════════════════
 #  落盘 & 入库
 # ════════════════════════════════════════════════════════════════
+
+def load_collect_state(fakeid):
+    """读回该公众号（按 fakeid）上次翻到的 begin 游标；没有则 0。"""
+    if not os.path.exists(COLLECT_STATE_FILE):
+        return 0
+    try:
+        with open(COLLECT_STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return int((data.get(fakeid) or {}).get("begin", 0))
+    except (ValueError, OSError, TypeError):
+        return 0
+
+
+def save_collect_state(fakeid, begin, nickname, since):
+    """把该公众号的 begin 游标存回状态文件（按 fakeid 分条，互不影响）。"""
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    data = {}
+    if os.path.exists(COLLECT_STATE_FILE):
+        try:
+            with open(COLLECT_STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (ValueError, OSError):
+            data = {}
+    data[fakeid] = {
+        "begin": int(begin), "account": nickname, "since": since,
+        "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    with open(COLLECT_STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 
 def save_json(articles, accounts, since, partial=False):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -873,14 +916,14 @@ def print_fallback_hint(accounts=None):
     print("\n── 采集路径优先级 ─────────────────────────────────")
     print("  首选（默认）：collect（appmsg 后台接口）——最直接、最准确，按公众号真实文章列表拉全文。")
     print("  当前是被微信频控挡住（不是数据没了）。建议做法按序：")
-    print("    1) 等冷却 / 换个时段重跑 collect（重跑会自动去重续采）——优先试这个；")
+    print("    1) 等冷却 / 换个时段重跑 collect；拉大号的历史时加 --resume（断点续采，不重花配额）；")
     print("    2) 实在持续拿不到，且你手头有该号的文章 URL / RSS 源时，再【经你确认】改用备选：")
     print("         python3 wechat_collector.py collect-urls <URL / 文件 / RSS 源>")
     print("  ⚠ 备选路径（collect-urls）的文章完整性只取决于你给的来源，可能漏文章、甚至串到同名号，")
     print("    不如 collect 权威——所以默认不会自动切过去，由你决定。")
 
 
-def run_collect(accounts, since, count, fetch_content, auto_ingest):
+def run_collect(accounts, since, count, fetch_content, auto_ingest, resume=False):
     print("=" * 64)
     print("  墨摘 · 微信公众号采集（Cookie+Token）")
     print("=" * 64)
@@ -894,7 +937,8 @@ def run_collect(accounts, since, count, fetch_content, auto_ingest):
         return 1
 
     print(f"配置：{len(accounts)} 个公众号 | 日期≥{since or '不限'} | "
-          f"每号目标 {count} 篇 | 抓正文={fetch_content} | 自动入库={auto_ingest}")
+          f"每号目标 {count} 篇 | 抓正文={fetch_content} | 自动入库={auto_ingest}"
+          + (" | 断点续采=开" if resume else ""))
 
     session = make_session(cookie)
     all_articles = []
@@ -906,7 +950,7 @@ def run_collect(accounts, since, count, fetch_content, auto_ingest):
             # 一旦抛频控/凭证异常，.extend() 是执行不到的，那就会把
             # 屏幕上已经列印出来的文章全部丢掉——这是之前「空」的根因。
             collect_account(session, token, name, since, count, fetch_content,
-                            sink=all_articles)
+                            sink=all_articles, resume=resume)
         except AuthError as e:
             print(f"\n❌ 凭证问题：{e}")
             print_credential_guide()
@@ -1220,6 +1264,8 @@ def build_parser():
     sp.add_argument("--count", type=int, default=TARGET_COUNT, help="每号目标篇数")
     sp.add_argument("--no-content", action="store_true", help="只采列表元数据，不抓正文")
     sp.add_argument("--no-kb", action="store_true", help="不自动入知识库")
+    sp.add_argument("--resume", action="store_true",
+                    help="断点续采：从上次存的 begin 游标接着翻，不重复请求已拉页（拉大号历史、省频控配额）")
     _add_freq_args(sp)
 
     sp = sub.add_parser("read", help="抓取单篇文章全文（粘链场景）")
@@ -1268,7 +1314,7 @@ def main():
 
     if args.cmd == "collect":
         return run_collect(args.accounts, args.since.strip(), args.count,
-                           not args.no_content, not args.no_kb)
+                           not args.no_content, not args.no_kb, args.resume)
     if args.cmd == "read":
         return run_read(args.url, args.out)
     if args.cmd == "collect-urls":
@@ -1279,7 +1325,7 @@ def main():
         return run_search(args.keyword, args.count, not args.no_content, not args.no_kb)
 
     # 无子命令 → 旧用法：读文件顶部默认配置
-    return run_collect(ACCOUNTS, DATE_FILTER_THRESHOLD, TARGET_COUNT, FETCH_CONTENT, AUTO_INGEST)
+    return run_collect(ACCOUNTS, DATE_FILTER_THRESHOLD, TARGET_COUNT, FETCH_CONTENT, AUTO_INGEST, False)
 
 
 if __name__ == "__main__":

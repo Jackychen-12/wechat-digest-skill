@@ -107,7 +107,12 @@ python3 wechat_collector.py
 ```
 
 **`collect` 选项**：`--since YYYY-MM-DD`（仅采此日期后；传 `--since ""` 不限）、`--count N`（每号目标篇数）、
-`--no-content`、`--no-kb`、`--freq-cooldown`、`--freq-retries`。
+`--no-content`、`--no-kb`、`--freq-cooldown`、`--freq-retries`、`--resume`。
+
+> **`--resume`（断点续采）**：拉大号历史时用。每翻一页列表 = 一次珍贵的 appmsg 请求；
+> 不加 `--resume` 的话，频控中断后重跑会从第 1 页重新拉（已拿的页白烧一遍配额，虽然 KB 会去重）。
+> 加 `--resume` 后，游标（每个号的 `begin`）存在 `output/collect_state.json`，重跑**从上次断的页接着拉**，
+> 每一次 appmsg 请求都花在新文章上——在严频控下把跨天产出成倍提高。（采“最新 N 篇”不需要它，不加即从最新开始。）
 
 **`collect-urls`（备选采集，仅在 appmsg 被锁且经确认后用）**：`sources`（一或多个，可混合）+ `--no-kb`。
 它走单篇公开页（与 appmsg **两套限流**），所以 `collect`（appmsg）被 `ret=200013` 锁住的当天依然能拿到全文。
