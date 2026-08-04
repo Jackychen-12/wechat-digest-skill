@@ -10,3 +10,4 @@ __pycache__/
 *.pyc
 .DS_Store
 *.log
+wx_keys.json
