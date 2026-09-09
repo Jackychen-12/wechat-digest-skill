@@ -50,7 +50,7 @@
 > 公众号没有公开官方 API、浏览器直连强反爬。本技能以**微信公众平台后台 Cookie+Token** 为核心，是目前最稳的全文采集路径。
 > `kb.py` / `render_html.py` **仅用标准库**，无网、无 pip 也能跑；只有采集这步需要 `requests`（Excel 需 `openpyxl`）。
 
-> **公众号之外的材料想进同一知识库时**：本技能按公众号名或公众号文章链接采集；如果是别的网页、PDF、或本地的文档/音频/视频，先用 [cue-omni-reader](https://github.com/sensedeal/cue-skills/tree/main/cue-omni-reader) 收成 Markdown——网页（含页内视频/附件）+ 已授权本地文档/音频/视频 → Markdown，一次可选多个本地文件——再把文本交给 `kb.py` 建库，一样进 `digest.html`。一行安装：`npx skills add sensedeal/cue-skills --skill cue-omni-reader`（MIT，可能计费）。
+> **公众号之外的材料想纳入同一知识库时**：本技能按公众号名或公众号文章链接采集；如果是别的网页、PDF、或本地的文档/音频/视频，先用 [cue-omni-reader](https://github.com/sensedeal/cue-skills/tree/main/cue-omni-reader) 收成 Markdown——网页（含页内视频/附件）+ 已授权本地文档/音频/视频 → Markdown，一次可选多个本地文件——再让 agent 按本技能的「知识库分析工作流」文章结构纳入知识库。一行安装：`npx skills add sensedeal/cue-skills --skill cue-omni-reader`（MIT，可能计费）。
 
 ---
 
